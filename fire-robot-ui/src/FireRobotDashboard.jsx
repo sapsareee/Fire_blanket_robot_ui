@@ -1,7 +1,12 @@
+import { useMemo, useState } from "react";
+
 export default function FireRobotDashboard() {
+  const [thermalConnected, setThermalConnected] = useState(false);
+  const [thermalReloadKey, setThermalReloadKey] = useState(0);
+
   const connectionItems = [
-    { name: "자율주행", status: "connect" },
-    { name: "열화상 카메라", status: "connect" },
+    { name: "자율주행", status: thermalConnected ? "connect" : "disconnect" },
+    { name: "열화상 카메라", status: thermalConnected ? "connect" : "disconnect" },
     { name: "비전 센서", status: "connect" },
     { name: "배터리 센서", status: "disconnect" },
     { name: "온도센서", status: "connect" },
@@ -19,6 +24,12 @@ export default function FireRobotDashboard() {
     { time: "14:22:16", level: "INFO", text: "이벤트 로그 저장 완료" },
   ];
 
+  // ROS2 web_video_server 사용 예시
+  // 예: ros2 run web_video_server web_video_server
+  // 브라우저에서 접근 가능한 주소로 바꾸세요.
+  const thermalStreamUrl =
+    "http://localhost:8080/stream?topic=/thermal/image&qos_profile=sensor_data";
+    
   const linePath = (data, width = 320, height = 160, padding = 16) => {
     const max = Math.max(...data);
     const min = Math.min(...data);
@@ -47,7 +58,6 @@ export default function FireRobotDashboard() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#1d4b4b,_#0b1220_35%,_#09111b_70%)] p-4 md:p-6 text-white">
       <div className="mx-auto max-w-[1600px] rounded-[30px] border border-white/10 bg-slate-950/80 shadow-2xl backdrop-blur-xl overflow-hidden">
         <div className="grid min-h-[90vh] grid-cols-1 xl:grid-cols-[96px_minmax(0,1fr)_320px]">
-          {/* Left Navigation */}
           <aside className="border-b xl:border-b-0 xl:border-r border-white/10 bg-slate-950/70 p-3 md:p-4 flex xl:flex-col items-center xl:items-stretch justify-between gap-3">
             <div className="flex xl:flex-col items-center gap-3 w-full">
               <div className="h-12 w-12 rounded-2xl bg-cyan-500/20 border border-cyan-400/20 flex items-center justify-center text-cyan-300 font-semibold text-lg">
@@ -62,23 +72,63 @@ export default function FireRobotDashboard() {
             </div>
           </aside>
 
-          {/* Main Content */}
           <main className="p-4 md:p-6 lg:p-7">
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <section className="rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <h2 className="text-lg md:text-xl font-semibold">자율주행 모니터링</h2>
-                    <p className="text-sm text-slate-400">주행 경로, 장애물 회피, 상태 확인</p>
+                    <p className="text-sm text-slate-400">ROS2 열화상 스트림 표시</p>
                   </div>
-                  <span className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">LIVE</span>
+
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs ${
+                        thermalConnected
+                          ? "border border-emerald-400/30 bg-emerald-500/15 text-emerald-300"
+                          : "border border-rose-400/30 bg-rose-500/15 text-rose-300"
+                      }`}
+                    >
+                      {thermalConnected ? "LIVE" : "DISCONNECTED"}
+                    </span>
+
+                    <button
+                      onClick={() => {
+                        setThermalConnected(false);
+                        setThermalReloadKey((v) => v + 1);
+                      }}
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:bg-white/10"
+                    >
+                      재연결
+                    </button>
+                  </div>
                 </div>
-                <div className="aspect-video w-full rounded-2xl border border-white/10 bg-[linear-gradient(135deg,_rgba(59,130,246,0.18),_rgba(15,23,42,0.85))] p-4 flex items-end overflow-hidden relative">
-                  <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.22),transparent_35%),radial-gradient(circle_at_80%_70%,rgba(16,185,129,0.2),transparent_30%)]" />
-                  <div className="relative z-10 rounded-2xl bg-slate-900/70 border border-white/10 px-4 py-3 backdrop-blur">
-                    <div className="text-sm text-slate-300">Navigation Feed</div>
-                    <div className="mt-1 text-xl font-semibold">경로 추종 정상 / 장애물 2개 감지</div>
-                  </div>
+
+                <div className="aspect-video w-full rounded-2xl border border-white/10 bg-black overflow-hidden relative">
+                  <img
+                    src={thermalStreamUrl}
+                    alt="ROS2 thermal stream"
+                    className="h-full w-full object-cover"
+                    onLoad={() => setThermalConnected(true)}
+                    onError={() => setThermalConnected(false)}
+                  />
+
+                  {!thermalConnected && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 text-center p-6">
+                      <div className="mb-2 text-sm font-medium text-rose-300">
+                        열화상 스트림 연결 대기 중
+                      </div>
+                      <p className="max-w-md text-xs md:text-sm text-slate-400 leading-relaxed">
+                        thermal_camera_node가 /thermal/image 를 publish 중인지 확인하고,
+                        브라우저에서 접근 가능한 영상 브리지 주소가 맞는지 확인하세요.
+                      </p>
+                      <p className="mt-3 text-[11px] text-slate-500">
+                        예: http://localhost:8080/stream?topic=/thermal/image
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
                 </div>
               </section>
 
@@ -88,14 +138,12 @@ export default function FireRobotDashboard() {
                     <h2 className="text-lg md:text-xl font-semibold">비전 카메라 모니터링</h2>
                     <p className="text-sm text-slate-400">작업 시야 및 환경 인식 확인</p>
                   </div>
-                  <span className="rounded-full border border-sky-400/30 bg-sky-500/15 px-3 py-1 text-xs text-sky-300">STREAMING</span>
+                  <span className="rounded-full border border-sky-400/30 bg-sky-500/15 px-3 py-1 text-xs text-sky-300">
+                    STREAMING
+                  </span>
                 </div>
                 <div className="aspect-video w-full rounded-2xl border border-white/10 bg-[linear-gradient(135deg,_rgba(14,165,233,0.18),_rgba(15,23,42,0.88))] p-4 flex items-end overflow-hidden relative">
                   <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_25%_15%,rgba(96,165,250,0.24),transparent_35%),radial-gradient(circle_at_75%_75%,rgba(168,85,247,0.18),transparent_30%)]" />
-                  <div className="relative z-10 rounded-2xl bg-slate-900/70 border border-white/10 px-4 py-3 backdrop-blur">
-                    <div className="text-sm text-slate-300">Vision Feed</div>
-                    <div className="mt-1 text-xl font-semibold">전방 시야 확보 / 연기 농도 상승</div>
-                  </div>
                 </div>
               </section>
             </div>
@@ -120,7 +168,15 @@ export default function FireRobotDashboard() {
                     </linearGradient>
                   </defs>
                   {[0, 1, 2, 3].map((i) => (
-                    <line key={i} x1="16" x2="304" y1={16 + i * 32} y2={16 + i * 32} stroke="rgba(148,163,184,0.15)" strokeWidth="1" />
+                    <line
+                      key={i}
+                      x1="16"
+                      x2="304"
+                      y1={16 + i * 32}
+                      y2={16 + i * 32}
+                      stroke="rgba(148,163,184,0.15)"
+                      strokeWidth="1"
+                    />
                   ))}
                   <path d={linePath(batteryData)} fill="none" stroke="url(#batteryLine)" strokeWidth="4" strokeLinecap="round" />
                 </svg>
@@ -145,7 +201,15 @@ export default function FireRobotDashboard() {
                     </linearGradient>
                   </defs>
                   {[0, 1, 2, 3].map((i) => (
-                    <line key={i} x1="16" x2="304" y1={16 + i * 32} y2={16 + i * 32} stroke="rgba(148,163,184,0.15)" strokeWidth="1" />
+                    <line
+                      key={i}
+                      x1="16"
+                      x2="304"
+                      y1={16 + i * 32}
+                      y2={16 + i * 32}
+                      stroke="rgba(148,163,184,0.15)"
+                      strokeWidth="1"
+                    />
                   ))}
                   <path d={linePath(tempData)} fill="none" stroke="url(#tempLine)" strokeWidth="4" strokeLinecap="round" />
                 </svg>
@@ -157,7 +221,9 @@ export default function FireRobotDashboard() {
                     <h3 className="text-base md:text-lg font-semibold">트리거 로그</h3>
                     <p className="text-sm text-slate-400">특정 이벤트 및 경고 이력</p>
                   </div>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">6 events</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                    6 events
+                  </span>
                 </div>
                 <div className="h-52 overflow-auto rounded-2xl border border-white/10 bg-slate-950/60 p-3 space-y-3">
                   {logs.map((log, idx) => (
@@ -176,23 +242,31 @@ export default function FireRobotDashboard() {
             </div>
           </main>
 
-          {/* Right Status Panel */}
           <aside className="border-t xl:border-t-0 xl:border-l border-white/10 bg-slate-950/50 p-4 md:p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">시스템 연결 상태</h2>
                 <p className="text-sm text-slate-400">모듈별 연결 여부</p>
               </div>
-              <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300">5 Modules</span>
+              <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300">
+                5 Modules
+              </span>
             </div>
             <div className="space-y-3">
               {connectionItems.map((item) => (
-                <div key={item.name} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 flex items-center justify-between gap-3">
+                <div
+                  key={item.name}
+                  className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 flex items-center justify-between gap-3"
+                >
                   <div>
                     <div className="font-medium text-slate-100">{item.name}</div>
                     <div className="mt-1 text-xs text-slate-400">상태 모니터링 활성화</div>
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusStyle(item.status)}`}>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusStyle(
+                      item.status
+                    )}`}
+                  >
                     {item.status}
                   </span>
                 </div>
