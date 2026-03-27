@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import * as ROSLIB from "roslib";
 
 const ROSBRIDGE_URL = "ws://localhost:9090";
 const TIMEOUT_MS = 4000;
 const CHECK_INTERVAL_MS = 1000;
+const MAX_RECONNECT_ATTEMPTS = 10; // 최대 재연결 시도 횟수
 
 const TOPIC_CONFIG = [
   { key: "autonomy", name: "자율주행", topic: "/autonomy/status" },
@@ -29,6 +30,11 @@ export default function FireRobotDashboard() {
   const [thermalImageOk, setThermalImageOk] = useState(false);
   const [topicStates, setTopicStates] = useState(createInitialTopicState());
 
+  // 재연결 로직용 ref
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimeoutRef = useRef(null);
+  const rosInstanceRef = useRef(null);
+
   const batteryData = [62, 60, 59, 57, 56, 54, 53, 51, 50, 48, 47, 45];
   const tempData = [38, 39, 41, 42, 43, 45, 47, 46, 48, 49, 50, 52];
 
@@ -48,94 +54,165 @@ export default function FireRobotDashboard() {
     "http://localhost:8080/stream?topic=/thermal/image&qos_profile=sensor_data";
 
   useEffect(() => {
-    const ros = new ROSLIB.Ros({
-      url: ROSBRIDGE_URL,
-    });
-
     let isUnmounted = false;
-    const subscribers = [];
+    let subscribers = [];
+    let timeoutChecker = null;
 
-    ros.on("connection", () => {
+    const scheduleReconnect = () => {
+      if (
+        isUnmounted ||
+        reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS
+      ) {
+        console.error(
+          `[ROS] Max reconnection attempts reached (${MAX_RECONNECT_ATTEMPTS})`
+        );
+        return;
+      }
+
+      reconnectAttemptRef.current += 1;
+      // 지수 백오프: 1초, 2초, 4초, 8초, ... 최대 30초
+      const delay = Math.min(
+        1000 * Math.pow(2, reconnectAttemptRef.current - 1),
+        30000
+      );
+
+      console.log(
+        `[ROS] Scheduling reconnection in ${delay}ms (attempt ${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS})`
+      );
+
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+
+      reconnectTimeoutRef.current = setTimeout(() => {
+        connectRos();
+      }, delay);
+    };
+
+    const connectRos = () => {
       if (isUnmounted) return;
-      setRosConnected(true);
-      console.log("[ROS] rosbridge connected");
-    });
 
-    ros.on("error", (error) => {
-      if (isUnmounted) return;
-      setRosConnected(false);
-      console.error("[ROS] rosbridge error:", error);
-    });
-
-    ros.on("close", () => {
-      if (isUnmounted) return;
-      setRosConnected(false);
-      console.warn("[ROS] rosbridge closed");
-
-      // rosbridge 연결이 끊긴 경우 전체를 timeout/disconnect 취급
-      setTopicStates((prev) => {
-        const next = { ...prev };
-        for (const cfg of TOPIC_CONFIG) {
-          next[cfg.key] = {
-            ...next[cfg.key],
-            timedOut: true,
-          };
+      // 기존 연결 정리
+      if (rosInstanceRef.current) {
+        try {
+          rosInstanceRef.current.close();
+        } catch (e) {
+          console.warn("[ROS] Failed to close existing connection:", e);
         }
-        return next;
-      });
-    });
+      }
 
-    TOPIC_CONFIG.forEach((cfg) => {
-      const topic = new ROSLIB.Topic({
-        ros,
-        name: cfg.topic,
-        messageType: "std_msgs/msg/Bool",
+      // 기존 구독자 정리
+      subscribers.forEach((topic) => {
+        try {
+          topic.unsubscribe();
+        } catch (e) {
+          console.warn("[ROS] unsubscribe failed:", e);
+        }
+      });
+      subscribers = [];
+
+      const ros = new ROSLIB.Ros({
+        url: ROSBRIDGE_URL,
       });
 
-      topic.subscribe((message) => {
+      rosInstanceRef.current = ros;
+
+      ros.on("connection", () => {
         if (isUnmounted) return;
-
-        setTopicStates((prev) => ({
-          ...prev,
-          [cfg.key]: {
-            value: Boolean(message.data),
-            lastSeen: Date.now(),
-            timedOut: false,
-          },
-        }));
+        reconnectAttemptRef.current = 0; // 성공 시 재시도 카운트 리셋
+        setRosConnected(true);
+        console.log("[ROS] rosbridge connected successfully");
       });
 
-      subscribers.push(topic);
-    });
+      ros.on("error", (error) => {
+        if (isUnmounted) return;
+        setRosConnected(false);
+        console.error("[ROS] rosbridge error:", error);
+        scheduleReconnect();
+      });
 
-    const timeoutChecker = setInterval(() => {
-      const now = Date.now();
+      ros.on("close", () => {
+        if (isUnmounted) return;
+        setRosConnected(false);
+        console.warn("[ROS] rosbridge connection closed");
 
-      setTopicStates((prev) => {
-        let changed = false;
-        const next = { ...prev };
-
-        for (const cfg of TOPIC_CONFIG) {
-          const current = prev[cfg.key];
-          const isTimedOut =
-            !current.lastSeen || now - current.lastSeen > TIMEOUT_MS;
-
-          if (current.timedOut !== isTimedOut) {
+        // rosbridge 연결이 끊긴 경우 전체를 timeout/disconnect 취급
+        setTopicStates((prev) => {
+          const next = { ...prev };
+          for (const cfg of TOPIC_CONFIG) {
             next[cfg.key] = {
-              ...current,
-              timedOut: isTimedOut,
+              ...next[cfg.key],
+              timedOut: true,
             };
-            changed = true;
           }
-        }
+          return next;
+        });
 
-        return changed ? next : prev;
+        scheduleReconnect();
       });
-    }, CHECK_INTERVAL_MS);
+
+      TOPIC_CONFIG.forEach((cfg) => {
+        const topic = new ROSLIB.Topic({
+          ros,
+          name: cfg.topic,
+          messageType: "std_msgs/msg/Bool",
+        });
+
+        topic.subscribe((message) => {
+          if (isUnmounted) return;
+
+          setTopicStates((prev) => ({
+            ...prev,
+            [cfg.key]: {
+              value: Boolean(message.data),
+              lastSeen: Date.now(),
+              timedOut: false,
+            },
+          }));
+        });
+
+        subscribers.push(topic);
+      });
+
+      timeoutChecker = setInterval(() => {
+        const now = Date.now();
+
+        setTopicStates((prev) => {
+          let changed = false;
+          const next = { ...prev };
+
+          for (const cfg of TOPIC_CONFIG) {
+            const current = prev[cfg.key];
+            const isTimedOut =
+              !current.lastSeen || now - current.lastSeen > TIMEOUT_MS;
+
+            if (current.timedOut !== isTimedOut) {
+              next[cfg.key] = {
+                ...current,
+                timedOut: isTimedOut,
+              };
+              changed = true;
+            }
+          }
+
+          return changed ? next : prev;
+        });
+      }, CHECK_INTERVAL_MS);
+    };
+
+    // 초기 연결
+    connectRos();
 
     return () => {
       isUnmounted = true;
-      clearInterval(timeoutChecker);
+
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+
+      if (timeoutChecker) {
+        clearInterval(timeoutChecker);
+      }
 
       subscribers.forEach((topic) => {
         try {
@@ -145,10 +222,12 @@ export default function FireRobotDashboard() {
         }
       });
 
-      try {
-        ros.close();
-      } catch (e) {
-        console.warn("[ROS] close failed:", e);
+      if (rosInstanceRef.current) {
+        try {
+          rosInstanceRef.current.close();
+        } catch (e) {
+          console.warn("[ROS] close failed:", e);
+        }
       }
     };
   }, []);
