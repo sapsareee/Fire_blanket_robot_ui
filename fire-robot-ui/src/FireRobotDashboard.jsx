@@ -9,6 +9,7 @@ const MAX_RECONNECT_ATTEMPTS = 10; // 최대 재연결 시도 횟수
 const TOPIC_CONFIG = [
   { key: "autonomy", name: "자율주행", topic: "/autonomy/status" },
   { key: "thermal_camera", name: "열화상 카메라", topic: "/thermal_camera/status" },
+  { key: "thermal_max_temp", name: "열화상 최대 온도", topic: "/thermal/max_temperature" },
   { key: "vision_sensor", name: "비전 센서", topic: "/vision_sensor/status" },
   { key: "battery_sensor", name: "배터리 센서", topic: "/battery_sensor/status" },
   { key: "temperature_sensor", name: "온도센서", topic: "/temperature_sensor/status" },
@@ -29,6 +30,8 @@ export default function FireRobotDashboard() {
   const [thermalReloadKey, setThermalReloadKey] = useState(0);
   const [thermalImageOk, setThermalImageOk] = useState(false);
   const [topicStates, setTopicStates] = useState(createInitialTopicState());
+  const [thermalImageSize, setThermalImageSize] = useState({ width: 0, height: 0 });
+  const [maxTemperature, setMaxTemperature] = useState(null);
 
   // 재연결 로직용 ref
   const reconnectAttemptRef = useRef(0);
@@ -152,26 +155,52 @@ export default function FireRobotDashboard() {
       });
 
       TOPIC_CONFIG.forEach((cfg) => {
-        const topic = new ROSLIB.Topic({
-          ros,
-          name: cfg.topic,
-          messageType: "std_msgs/msg/Bool",
-        });
+        // thermal_max_temp는 Float32 메시지 사용
+        if (cfg.key === 'thermal_max_temp') {
+          const topic = new ROSLIB.Topic({
+            ros,
+            name: cfg.topic,
+            messageType: "std_msgs/msg/Float32",
+          });
 
-        topic.subscribe((message) => {
-          if (isUnmounted) return;
+          topic.subscribe((message) => {
+            if (isUnmounted) return;
+            setMaxTemperature(message.data);
+            // 최대 온도 토픽도 상태 업데이트
+            setTopicStates((prev) => ({
+              ...prev,
+              [cfg.key]: {
+                value: message.data,
+                lastSeen: Date.now(),
+                timedOut: false,
+              },
+            }));
+          });
 
-          setTopicStates((prev) => ({
-            ...prev,
-            [cfg.key]: {
-              value: Boolean(message.data),
-              lastSeen: Date.now(),
-              timedOut: false,
-            },
-          }));
-        });
+          subscribers.push(topic);
+        } else {
+          // 다른 토픽들은 Bool 메시지 사용
+          const topic = new ROSLIB.Topic({
+            ros,
+            name: cfg.topic,
+            messageType: "std_msgs/msg/Bool",
+          });
 
-        subscribers.push(topic);
+          topic.subscribe((message) => {
+            if (isUnmounted) return;
+
+            setTopicStates((prev) => ({
+              ...prev,
+              [cfg.key]: {
+                value: Boolean(message.data),
+                lastSeen: Date.now(),
+                timedOut: false,
+              },
+            }));
+          });
+
+          subscribers.push(topic);
+        }
       });
 
       timeoutChecker = setInterval(() => {
@@ -233,7 +262,7 @@ export default function FireRobotDashboard() {
   }, []);
 
   const connectionItems = useMemo(() => {
-    return TOPIC_CONFIG.map((cfg) => {
+    return TOPIC_CONFIG.filter(cfg => cfg.key !== 'thermal_max_temp').map((cfg) => {
       const state = topicStates[cfg.key];
       const isAlive = state && !state.timedOut && state.value === true;
 
@@ -360,17 +389,39 @@ export default function FireRobotDashboard() {
                   </span>
                 </div>
 
-                <div className="aspect-video w-full rounded-2xl border border-white/10 bg-black overflow-hidden relative">
+                <div className="w-full max-w-2xl rounded-2xl border border-white/10 overflow-hidden relative">
                   <img
                     key={thermalReloadKey}
                     src={`${thermalStreamUrl}&reload=${thermalReloadKey}`}
                     alt="ROS2 thermal stream"
-                    className="h-full w-full object-cover"
-                    onLoad={() => setThermalImageOk(true)}
-                    onError={() => setThermalImageOk(false)}
+                    className="w-full h-full object-cover"
+                    onLoad={(e) => {
+                      const img = e.target;
+                      setThermalImageSize({
+                        width: img.naturalWidth,
+                        height: img.naturalHeight
+                      });
+                      setThermalImageOk(true);
+                    }}
+                    onError={() => {
+                      setThermalImageSize({ width: 0, height: 0 });
+                      setThermalImageOk(false);
+                    }}
                   />
 
                   <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
+                </div>
+
+                {/* 최대 온도 표시 */}
+                <div className="mt-3 flex items-center justify-center">
+                  <div className="rounded-lg bg-black/50 backdrop-blur-sm border border-white/10 px-4 py-2">
+                    <div className="text-center">
+                      <div className="text-sm text-slate-400 mb-1">최대 온도</div>
+                      <div className="text-2xl font-bold text-orange-400">
+                        {maxTemperature !== null ? `${maxTemperature.toFixed(1)}°C` : '--°C'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </section>
 
@@ -388,7 +439,7 @@ export default function FireRobotDashboard() {
                     STREAMING
                   </span>
                 </div>
-                <div className="aspect-video w-full rounded-2xl border border-white/10 bg-[linear-gradient(135deg,_rgba(14,165,233,0.18),_rgba(15,23,42,0.88))] p-4 flex items-end overflow-hidden relative">
+                <div className="aspect-square w-full rounded-2xl border border-white/10 bg-[linear-gradient(135deg,_rgba(14,165,233,0.18),_rgba(15,23,42,0.88))] p-4 flex items-end overflow-hidden relative">
                   <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_25%_15%,rgba(96,165,250,0.24),transparent_35%),radial-gradient(circle_at_75%_75%,rgba(168,85,247,0.18),transparent_30%)]" />
                 </div>
               </section>
