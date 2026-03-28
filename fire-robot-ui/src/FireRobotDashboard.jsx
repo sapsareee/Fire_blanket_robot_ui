@@ -29,6 +29,8 @@ export default function FireRobotDashboard() {
   const [rosConnected, setRosConnected] = useState(false);
   const [thermalReloadKey, setThermalReloadKey] = useState(0);
   const [thermalImageOk, setThermalImageOk] = useState(false);
+  const [rvizReloadKey, setRvizReloadKey] = useState(0);
+  const [rvizImageOk, setRvizImageOk] = useState(false);
   const [topicStates, setTopicStates] = useState(createInitialTopicState());
   const [thermalImageSize, setThermalImageSize] = useState({ width: 0, height: 0 });
   const [maxTemperature, setMaxTemperature] = useState(null);
@@ -55,6 +57,8 @@ export default function FireRobotDashboard() {
   // 브라우저에서 접근 가능한 주소로 바꾸세요.
   const thermalStreamUrl =
     "http://localhost:8080/stream?topic=/thermal/image&qos_profile=sensor_data";
+  const rvizStreamUrl =
+    "http://localhost:8080/stream?topic=/rviz/image&qos_profile=sensor_data";
 
   useEffect(() => {
     let isUnmounted = false;
@@ -426,21 +430,52 @@ export default function FireRobotDashboard() {
               </section>
 
               <section className="rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h2 className="text-lg md:text-xl font-semibold">
                       자율주행 모니터링
                     </h2>
                     <p className="text-sm text-slate-400">
-                      작업 시야 및 환경 인식 확인
+                      RViz 화면을 실시간으로 확인하세요
                     </p>
                   </div>
-                  <span className="rounded-full border border-sky-400/30 bg-sky-500/15 px-3 py-1 text-xs text-sky-300">
-                    STREAMING
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wide ${
+                        rvizImageOk
+                          ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300"
+                          : "border-rose-400/30 bg-rose-500/15 text-rose-300"
+                      }`}
+                    >
+                      {rvizImageOk ? "RViz LIVE" : "RViz DISCONNECTED"}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setRvizImageOk(false);
+                        setRvizReloadKey((v) => v + 1);
+                      }}
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:bg-white/10"
+                    >
+                      재연결
+                    </button>
+                  </div>
                 </div>
-                <div className="aspect-square w-full rounded-2xl border border-white/10 bg-[linear-gradient(135deg,_rgba(14,165,233,0.18),_rgba(15,23,42,0.88))] p-4 flex items-end overflow-hidden relative">
-                  <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_25%_15%,rgba(96,165,250,0.24),transparent_35%),radial-gradient(circle_at_75%_75%,rgba(168,85,247,0.18),transparent_30%)]" />
+
+                <div className="aspect-square w-full rounded-2xl border border-white/10 overflow-hidden relative bg-slate-950/60">
+                  <img
+                    key={rvizReloadKey}
+                    src={`${rvizStreamUrl}&reload=${rvizReloadKey}`}
+                    alt="RViz live stream"
+                    className="h-full w-full object-cover"
+                    onLoad={(e) => {
+                      setRvizImageOk(true);
+                    }}
+                    onError={() => {
+                      setRvizImageOk(false);
+                    }}
+                  />
+
+                  <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
                 </div>
               </section>
             </div>
