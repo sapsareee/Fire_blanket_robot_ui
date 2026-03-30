@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import * as ROSLIB from "roslib";
 
-const ROSBRIDGE_URL = "ws://localhost:9090";
+const PAGE_IS_HTTPS = window.location.protocol === "https:";
+const WS_PROTOCOL = PAGE_IS_HTTPS ? "wss" : "ws";
+const HTTP_PROTOCOL = PAGE_IS_HTTPS ? "https" : "http";
+const DEFAULT_HOST = window.location.hostname;
+
+const ROS_HOST = import.meta.env.VITE_ROS_HOST || DEFAULT_HOST;
+const ROSBRIDGE_PORT = import.meta.env.VITE_ROSBRIDGE_PORT || "9090";
+const VIDEO_HOST = import.meta.env.VITE_VIDEO_HOST || DEFAULT_HOST;
+const VIDEO_PORT = import.meta.env.VITE_VIDEO_PORT || "8080";
+
+const ROSBRIDGE_URL = `${WS_PROTOCOL}://${ROS_HOST}:${ROSBRIDGE_PORT}`;
 const TIMEOUT_MS = 4000;
 const CHECK_INTERVAL_MS = 1000;
 const MAX_RECONNECT_ATTEMPTS = 10; // 최대 재연결 시도 횟수
@@ -56,9 +66,9 @@ export default function FireRobotDashboard() {
   // 예: ros2 run web_video_server web_video_server
   // 브라우저에서 접근 가능한 주소로 바꾸세요.
   const thermalStreamUrl =
-    "http://localhost:8080/stream?topic=/thermal/image&qos_profile=sensor_data";
+    `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/thermal/image&qos_profile=sensor_data`;
   const rvizStreamUrl =
-    "http://localhost:8080/stream?topic=/rviz/image&qos_profile=sensor_data";
+    `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/rviz/image&qos_profile=sensor_data`;
 
   useEffect(() => {
     let isUnmounted = false;
