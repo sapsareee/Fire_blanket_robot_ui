@@ -386,7 +386,7 @@ export default function FireRobotDashboard() {
             </button>
           </div>
         </div>
-
+ 
         <div className="grid min-h-[90vh] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px]">
           <main className="min-w-0 p-4 md:p-6 lg:p-7">
             {activeTab === "home" && (
