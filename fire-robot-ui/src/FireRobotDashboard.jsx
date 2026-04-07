@@ -22,15 +22,59 @@ const ROSBRIDGE_URL = `${WS_PROTOCOL}://${ROS_HOST}:${ROSBRIDGE_PORT}`;
 const TIMEOUT_MS = 4000;
 const CHECK_INTERVAL_MS = 1000;
 const MAX_RECONNECT_ATTEMPTS = 10; // 최대 재연결 시도 횟수
+const GRAPH_POINT_COUNT = 16;
+const GRAPH_UPDATE_MS = 1000;
+
+const BATTERY_MIN_V = 0;
+const BATTERY_MAX_V = 15;
+const BATTERY_BASE_V = 11.1;
+const BATTERY_INITIAL_VARIANCE = 0.3;
+
+const TEMP_MIN_C = 0;
+const TEMP_MAX_C = 100;
+const TEMP_BASE_C = 30;
+const TEMP_INITIAL_VARIANCE = 5;
+
+const GRAPH_FRAME = {
+  width: 320,
+  height: 160,
+  padLeft: 36,
+  padRight: 14,
+  padTop: 12,
+  padBottom: 22,
+};
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const formatTimeLabel = (timeMs) => {
+  const date = new Date(timeMs);
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+};
+
+const createInitialSeries = (count, baseValue, variance, min, max) => {
+  const now = Date.now();
+  return Array.from({ length: count }, (_, idx) => {
+    const timestamp = now - (count - 1 - idx) * GRAPH_UPDATE_MS;
+    const randomOffset = (Math.random() * 2 - 1) * variance;
+    return {
+      t: timestamp,
+      label: formatTimeLabel(timestamp),
+      value: clamp(baseValue + randomOffset, min, max),
+    };
+  });
+};
 
 const TOPIC_CONFIG = [
   { key: "autonomy", name: "자율주행", topic: "/autonomy/status" },
-  { key: "thermal_camera", name: "열화상 카메라", topic: "/thermal_camera/status" },
+  { key: "thermal_camera", name: "열화상", topic: "/thermal_camera/status" },
   { key: "thermal_max_temp", name: "열화상 최대 온도", topic: "/thermal/max_temperature" },
-  { key: "vision_sensor", name: "비전 센서", topic: "/vision_sensor/status" },
-  { key: "battery_sensor", name: "배터리 센서", topic: "/battery_sensor/status" },
-  { key: "motor", name: "모터", topic: "/motor/status" },
-  { key: "temperature_sensor", name: "온도센서", topic: "/temperature_sensor/status" },
+  { key: "vision_sensor", name: "RGB 카메라", topic: "/vision_sensor/status" },
+  { key: "battery_sensor", name: "배터리 상태", topic: "/battery_sensor/status" },
+  { key: "motor", name: "모터 상태", topic: "/motor/status" },
+  { key: "temperature_sensor", name: "로봇 온도", topic: "/temperature_sensor/status" },
 ];
 
 const createInitialTopicState = () =>
@@ -60,9 +104,24 @@ export default function FireRobotDashboard() {
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef(null);
   const rosInstanceRef = useRef(null);
-
-  const batteryData = [62, 60, 59, 57, 56, 54, 53, 51, 50, 48, 47, 45];
-  const tempData = [38, 39, 41, 42, 43, 45, 47, 46, 48, 49, 50, 52];
+  const [batterySeries, setBatterySeries] = useState(() =>
+    createInitialSeries(
+      GRAPH_POINT_COUNT,
+      BATTERY_BASE_V,
+      BATTERY_INITIAL_VARIANCE,
+      BATTERY_MIN_V,
+      BATTERY_MAX_V
+    )
+  );
+  const [tempSeries, setTempSeries] = useState(() =>
+    createInitialSeries(
+      GRAPH_POINT_COUNT,
+      TEMP_BASE_C,
+      TEMP_INITIAL_VARIANCE,
+      TEMP_MIN_C,
+      TEMP_MAX_C
+    )
+  );
 
   const logs = [
     { time: "14:21:08", level: "INFO", text: "자율주행 경로 추종 정상 동작" },
@@ -288,6 +347,44 @@ export default function FireRobotDashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+
+      setBatterySeries((prev) => {
+        const lastValue = prev[prev.length - 1]?.value ?? BATTERY_BASE_V;
+        const jitter = (Math.random() * 2 - 1) * 0.06;
+        const restore = (BATTERY_BASE_V - lastValue) * 0.12;
+        const nextValue = clamp(lastValue + jitter + restore, BATTERY_MIN_V, BATTERY_MAX_V);
+
+        const next = {
+          t: now,
+          label: formatTimeLabel(now),
+          value: Number(nextValue.toFixed(2)),
+        };
+
+        return [...prev.slice(-(GRAPH_POINT_COUNT - 1)), next];
+      });
+
+      setTempSeries((prev) => {
+        const lastValue = prev[prev.length - 1]?.value ?? TEMP_BASE_C;
+        const jitter = (Math.random() * 2 - 1) * 1.0;
+        const restore = (TEMP_BASE_C - lastValue) * 0.08;
+        const nextValue = clamp(lastValue + jitter + restore, TEMP_MIN_C, TEMP_MAX_C);
+
+        const next = {
+          t: now,
+          label: formatTimeLabel(now),
+          value: Number(nextValue.toFixed(1)),
+        };
+
+        return [...prev.slice(-(GRAPH_POINT_COUNT - 1)), next];
+      });
+    }, GRAPH_UPDATE_MS);
+
+    return () => clearInterval(timer);
+  }, []);
+
   const iconMap = {
     autonomy: autonomyIcon,
     thermal_camera: thermalIcon,
@@ -316,19 +413,35 @@ export default function FireRobotDashboard() {
   }, [topicStates]);
 
 
-  const linePath = (data, width = 320, height = 160, padding = 16) => {
-    const max = Math.max(...data);
-    const min = Math.min(...data);
-    const range = max - min || 1;
+  const graphX = (index, length, frame = GRAPH_FRAME) => {
+    const { width, padLeft, padRight } = frame;
+    const span = width - padLeft - padRight;
+    if (length <= 1) return padLeft;
+    return padLeft + (index * span) / (length - 1);
+  };
 
-    return data
-      .map((v, i) => {
-        const x = padding + (i * (width - padding * 2)) / (data.length - 1);
-        const y =
-          height - padding - ((v - min) / range) * (height - padding * 2);
+  const graphY = (value, min, max, frame = GRAPH_FRAME) => {
+    const { height, padTop, padBottom } = frame;
+    const range = max - min || 1;
+    const normalized = (value - min) / range;
+    const drawableHeight = height - padTop - padBottom;
+    return padTop + (1 - normalized) * drawableHeight;
+  };
+
+  const linePath = (series, min, max, frame = GRAPH_FRAME) => {
+    return series
+      .map((point, i) => {
+        const x = graphX(i, series.length, frame);
+        const y = graphY(point.value, min, max, frame);
         return `${i === 0 ? "M" : "L"}${x},${y}`;
       })
       .join(" ");
+  };
+
+  const axisLabelIndexes = (length) => {
+    if (length < 2) return [0];
+    const raw = [0, Math.floor((length - 1) / 3), Math.floor((2 * (length - 1)) / 3), length - 1];
+    return [...new Set(raw)];
   };
 
   const statusStyle = (status) =>
@@ -614,9 +727,9 @@ export default function FireRobotDashboard() {
                         </p>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm text-slate-400">현재 잔량</div>
+                        <div className="text-sm text-slate-400">현재 전압</div>
                         <div className="text-2xl font-semibold text-emerald-300">
-                          45%
+                          {batterySeries[batterySeries.length - 1]?.value.toFixed(2)}V
                         </div>
                       </div>
                     </div>
@@ -630,19 +743,33 @@ export default function FireRobotDashboard() {
                           <stop offset="100%" stopColor="#60a5fa" />
                         </linearGradient>
                       </defs>
-                      {[0, 1, 2, 3].map((i) => (
-                        <line
-                          key={i}
-                          x1="16"
-                          x2="304"
-                          y1={16 + i * 32}
-                          y2={16 + i * 32}
-                          stroke="rgba(148,163,184,0.15)"
-                          strokeWidth="1"
-                        />
-                      ))}
+                      {[0, 5, 10, 15].map((tick) => {
+                        const y = graphY(tick, BATTERY_MIN_V, BATTERY_MAX_V);
+                        return (
+                          <g key={tick}>
+                            <line
+                              x1={GRAPH_FRAME.padLeft}
+                              x2={GRAPH_FRAME.width - GRAPH_FRAME.padRight}
+                              y1={y}
+                              y2={y}
+                              stroke="rgba(148,163,184,0.18)"
+                              strokeWidth="1"
+                            />
+                            <text x="4" y={y + 3} fontSize="9" fill="rgba(203,213,225,0.8)">{tick}V</text>
+                          </g>
+                        );
+                      })}
+                      {axisLabelIndexes(batterySeries.length).map((idx) => {
+                        const x = graphX(idx, batterySeries.length);
+                        const label = batterySeries[idx]?.label?.slice(3) ?? "";
+                        return (
+                          <text key={`battery-x-${idx}`} x={x} y="154" textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.8)">
+                            {label}
+                          </text>
+                        );
+                      })}
                       <path
-                        d={linePath(batteryData)}
+                        d={linePath(batterySeries, BATTERY_MIN_V, BATTERY_MAX_V)}
                         fill="none"
                         stroke="url(#batteryLine)"
                         strokeWidth="4"
@@ -662,9 +789,9 @@ export default function FireRobotDashboard() {
                         </p>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm text-slate-400">최고 온도</div>
+                        <div className="text-sm text-slate-400">현재 온도</div>
                         <div className="text-2xl font-semibold text-amber-300">
-                          52°C
+                          {tempSeries[tempSeries.length - 1]?.value.toFixed(1)}°C
                         </div>
                       </div>
                     </div>
@@ -678,19 +805,33 @@ export default function FireRobotDashboard() {
                           <stop offset="100%" stopColor="#fb7185" />
                         </linearGradient>
                       </defs>
-                      {[0, 1, 2, 3].map((i) => (
-                        <line
-                          key={i}
-                          x1="16"
-                          x2="304"
-                          y1={16 + i * 32}
-                          y2={16 + i * 32}
-                          stroke="rgba(148,163,184,0.15)"
-                          strokeWidth="1"
-                        />
-                      ))}
+                      {[0, 20, 40, 60, 80, 100].map((tick) => {
+                        const y = graphY(tick, TEMP_MIN_C, TEMP_MAX_C);
+                        return (
+                          <g key={tick}>
+                            <line
+                              x1={GRAPH_FRAME.padLeft}
+                              x2={GRAPH_FRAME.width - GRAPH_FRAME.padRight}
+                              y1={y}
+                              y2={y}
+                              stroke="rgba(148,163,184,0.18)"
+                              strokeWidth="1"
+                            />
+                            <text x="4" y={y + 3} fontSize="9" fill="rgba(203,213,225,0.8)">{tick}°</text>
+                          </g>
+                        );
+                      })}
+                      {axisLabelIndexes(tempSeries.length).map((idx) => {
+                        const x = graphX(idx, tempSeries.length);
+                        const label = tempSeries[idx]?.label?.slice(3) ?? "";
+                        return (
+                          <text key={`temp-x-${idx}`} x={x} y="154" textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.8)">
+                            {label}
+                          </text>
+                        );
+                      })}
                       <path
-                        d={linePath(tempData)}
+                        d={linePath(tempSeries, TEMP_MIN_C, TEMP_MAX_C)}
                         fill="none"
                         stroke="url(#tempLine)"
                         strokeWidth="4"
