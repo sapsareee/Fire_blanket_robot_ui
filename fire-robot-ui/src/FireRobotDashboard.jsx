@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import * as ROSLIB from "roslib";
+import autonomyIcon from "./assets/icons/icon-autonomy.svg";
+import thermalIcon from "./assets/icons/icon-thermal.svg";
+import cameraIcon from "./assets/icons/icon-camera.svg";
+import batteryIcon from "./assets/icons/icon-battery.svg";
+import motorIcon from "./assets/icons/icon-motor.svg";
+import temperatureIcon from "./assets/icons/icon-temperature.svg";
+import rosIcon from "./assets/icons/icon-ros.svg";
 
 const PAGE_IS_HTTPS = window.location.protocol === "https:";
 const WS_PROTOCOL = PAGE_IS_HTTPS ? "wss" : "ws";
@@ -38,6 +45,7 @@ const createInitialTopicState = () =>
 
 export default function FireRobotDashboard() {
   const [rosConnected, setRosConnected] = useState(false);
+  const [activeTab, setActiveTab] = useState("home");
   const [thermalReloadKey, setThermalReloadKey] = useState(0);
   const [thermalImageOk, setThermalImageOk] = useState(false);
   const [rgbReloadKey, setRgbReloadKey] = useState(0);
@@ -281,12 +289,12 @@ export default function FireRobotDashboard() {
   }, []);
 
   const iconMap = {
-    autonomy: "🧭",
-    thermal_camera: "♨",
-    vision_sensor: "📷",
-    battery_sensor: "🔋",
-    motor: "⚙️",
-    temperature_sensor: "🌡️",
+    autonomy: autonomyIcon,
+    thermal_camera: thermalIcon,
+    vision_sensor: cameraIcon,
+    battery_sensor: batteryIcon,
+    motor: motorIcon,
+    temperature_sensor: temperatureIcon,
   };
 
   const connectionItems = useMemo(() => {
@@ -297,7 +305,7 @@ export default function FireRobotDashboard() {
       return {
         name: cfg.name,
         status: isAlive ? "connect" : "disconnect",
-        icon: iconMap[cfg.key] || "•",
+        icon: iconMap[cfg.key] || cameraIcon,
       };
     });
   }, [topicStates]);
@@ -337,31 +345,59 @@ export default function FireRobotDashboard() {
   };
 
   const miniStatClass =
-    "rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-center";
+    "rounded-2xl border border-white/15 bg-white/[0.05] backdrop-blur-lg backdrop-saturate-150 px-3 py-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]";
+
+  const glassPanelClass =
+    "rounded-[26px] border border-white/15 bg-white/[0.06] backdrop-blur-xl backdrop-saturate-150 shadow-[0_10px_35px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]";
+
+  const glassInsetClass =
+    "rounded-2xl border border-white/15 bg-white/[0.05] backdrop-blur-lg backdrop-saturate-150 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]";
+
+  const tabStyle = (tabKey) =>
+    activeTab === tabKey
+      ? "bg-cyan-500/20 border-cyan-300/50 text-cyan-100"
+      : "bg-white/[0.04] border-white/10 text-slate-300 hover:bg-white/[0.08]";
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#1d4b4b,_#0b1220_35%,_#09111b_70%)] p-4 md:p-6 text-white">
       <div className="mx-auto w-full max-w-none 2xl:max-w-[2200px] rounded-[30px] border border-white/10 bg-slate-950/80 shadow-2xl backdrop-blur-xl overflow-hidden">
-        <div className="grid min-h-[90vh] grid-cols-1 xl:grid-cols-[96px_minmax(0,1fr)_320px]">
-          <aside className="border-b xl:border-b-0 xl:border-r border-white/10 bg-slate-950/70 p-3 md:p-4 flex xl:flex-col items-center xl:items-stretch justify-between gap-3">
-            <div className="flex xl:flex-col items-center gap-3 w-full">
-              <div className="h-12 w-12 rounded-2xl bg-cyan-500/20 border border-cyan-400/20 flex items-center justify-center text-cyan-300 font-semibold text-lg">
-                FR
-              </div>
-              <button className="w-full rounded-2xl bg-blue-500/20 border border-blue-400/30 px-3 py-3 text-sm font-medium text-blue-200 shadow-inner shadow-blue-500/10">
-                Home
-              </button>
+        <div className="border-b border-white/10 bg-white/[0.04] backdrop-blur-xl p-3 md:p-4">
+          <div className="flex flex-wrap items-center gap-3 md:gap-4">
+            <div className="h-11 w-11 rounded-2xl bg-cyan-500/20 border border-cyan-400/20 flex items-center justify-center text-cyan-300 font-semibold text-base">
+              FR
             </div>
-          </aside>
+            <button
+              onClick={() => setActiveTab("home")}
+              className={`rounded-2xl border px-4 py-2 text-sm font-medium transition ${tabStyle("home")}`}
+            >
+              Home
+            </button>
+            <button
+              onClick={() => setActiveTab("events")}
+              className={`rounded-2xl border px-4 py-2 text-sm font-medium transition ${tabStyle("events")}`}
+            >
+              이벤트 로그
+            </button>
+            <button
+              onClick={() => setActiveTab("overview")}
+              className={`rounded-2xl border px-4 py-2 text-sm font-medium transition ${tabStyle("overview")}`}
+            >
+              시스템 개요
+            </button>
+          </div>
+        </div>
 
+        <div className="grid min-h-[90vh] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px]">
           <main className="min-w-0 p-4 md:p-6 lg:p-7">
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-3 items-stretch">
-              <section className="flex flex-col rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
+            {activeTab === "home" && (
+              <>
+                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-3 items-stretch">
+              <section className={`flex flex-col ${glassPanelClass} p-4`}>
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="mb-1 flex items-center gap-2 flex-nowrap whitespace-nowrap">
                       <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/15 text-orange-300 text-xs">
-                        ♨
+                        <img src={thermalIcon} alt="열화상 아이콘" className="h-4 w-4" />
                       </span>
                       <h2 className="text-lg md:text-xl font-semibold whitespace-nowrap">
                         열화상 카메라
@@ -395,7 +431,7 @@ export default function FireRobotDashboard() {
                   </div>
                 </div>
 
-                <div className="relative mt-1 aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
+                <div className={`relative mt-1 aspect-square w-full overflow-hidden ${glassInsetClass}`}>
                   <img
                     key={thermalReloadKey}
                     src={`${thermalStreamUrl}&reload=${thermalReloadKey}`}
@@ -442,12 +478,12 @@ export default function FireRobotDashboard() {
                 </div>
               </section>
 
-              <section className="flex flex-col rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
+              <section className={`flex flex-col ${glassPanelClass} p-4`}>
                 <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <div className="mb-1 flex items-center gap-2 flex-nowrap whitespace-nowrap">
                       <span className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-500/15 text-cyan-300 text-xs">
-                        🧭
+                        <img src={autonomyIcon} alt="자율주행 아이콘" className="h-4 w-4" />
                       </span>
                       <h2 className="text-lg md:text-xl font-semibold whitespace-nowrap">
                         자율주행 모니터링
@@ -477,7 +513,7 @@ export default function FireRobotDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-3">
-                  <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
+                  <div className={`relative aspect-square w-full overflow-hidden ${glassInsetClass}`}>
                     <img
                       key={rvizReloadKey}
                       src={`${rvizStreamUrl}&reload=${rvizReloadKey}`}
@@ -502,12 +538,12 @@ export default function FireRobotDashboard() {
                 </div>
               </section>
 
-              <section className="flex flex-col rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
+              <section className={`flex flex-col ${glassPanelClass} p-4`}>
                 <div className="mb-3 flex items-center justify-between">
                   <div className="min-w-0">
                     <div className="mb-1 flex items-center gap-2 flex-nowrap whitespace-nowrap">
                       <span className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-500/15 text-cyan-300 text-xs">
-                        📷
+                        <img src={cameraIcon} alt="카메라 아이콘" className="h-4 w-4" />
                       </span>
                       <h2 className="text-lg md:text-xl font-semibold whitespace-nowrap">
                         RGB 카메라
@@ -541,7 +577,7 @@ export default function FireRobotDashboard() {
                   </div>
                 </div>
 
-                <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
+                <div className={`relative aspect-square w-full overflow-hidden ${glassInsetClass}`}>
                   <img
                     key={rgbReloadKey}
                     src={`${rgbStreamUrl}&reload=${rgbReloadKey}`}
@@ -564,124 +600,159 @@ export default function FireRobotDashboard() {
                   </div>
                 </div>
               </section>
-            </div>
+                </div>
 
-            <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)]">
-              <section className="rounded-[26px] border border-white/10 bg-slate-900/70 p-4 md:p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base md:text-lg font-semibold">
-                      배터리 그래프
-                    </h3>
-                    <p className="text-sm text-slate-400">
-                      실시간 전압 및 잔량 추이
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm text-slate-400">현재 잔량</div>
-                    <div className="text-2xl font-semibold text-emerald-300">
-                      45%
+                <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)]">
+                  <section className={`${glassPanelClass} p-4 md:p-5`}>
+                    <div className="mb-4 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base md:text-lg font-semibold">
+                          배터리 그래프
+                        </h3>
+                        <p className="text-sm text-slate-400">
+                          실시간 전압 및 잔량 추이
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-slate-400">현재 잔량</div>
+                        <div className="text-2xl font-semibold text-emerald-300">
+                          45%
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-                <svg
-                  viewBox="0 0 320 160"
-                  className="h-52 w-full rounded-2xl border border-white/10 bg-slate-950/60 p-2"
-                >
-                  <defs>
-                    <linearGradient id="batteryLine" x1="0" x2="1">
-                      <stop offset="0%" stopColor="#34d399" />
-                      <stop offset="100%" stopColor="#60a5fa" />
-                    </linearGradient>
-                  </defs>
-                  {[0, 1, 2, 3].map((i) => (
-                    <line
-                      key={i}
-                      x1="16"
-                      x2="304"
-                      y1={16 + i * 32}
-                      y2={16 + i * 32}
-                      stroke="rgba(148,163,184,0.15)"
-                      strokeWidth="1"
-                    />
-                  ))}
-                  <path
-                    d={linePath(batteryData)}
-                    fill="none"
-                    stroke="url(#batteryLine)"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </section>
+                    <svg
+                      viewBox="0 0 320 160"
+                      className={`h-52 w-full ${glassInsetClass} p-2`}
+                    >
+                      <defs>
+                        <linearGradient id="batteryLine" x1="0" x2="1">
+                          <stop offset="0%" stopColor="#34d399" />
+                          <stop offset="100%" stopColor="#60a5fa" />
+                        </linearGradient>
+                      </defs>
+                      {[0, 1, 2, 3].map((i) => (
+                        <line
+                          key={i}
+                          x1="16"
+                          x2="304"
+                          y1={16 + i * 32}
+                          y2={16 + i * 32}
+                          stroke="rgba(148,163,184,0.15)"
+                          strokeWidth="1"
+                        />
+                      ))}
+                      <path
+                        d={linePath(batteryData)}
+                        fill="none"
+                        stroke="url(#batteryLine)"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </section>
 
-              <section className="rounded-[26px] border border-white/10 bg-slate-900/70 p-4 md:p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base md:text-lg font-semibold">
-                      로봇의 내부 온도 추이
-                    </h3>
-                    <p className="text-sm text-slate-400">
-                      내부 온도 및 상승 추세
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm text-slate-400">최고 온도</div>
-                    <div className="text-2xl font-semibold text-amber-300">
-                      52°C
+                  <section className={`${glassPanelClass} p-4 md:p-5`}>
+                    <div className="mb-4 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base md:text-lg font-semibold">
+                          로봇의 내부 온도 추이
+                        </h3>
+                        <p className="text-sm text-slate-400">
+                          내부 온도 및 상승 추세
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-slate-400">최고 온도</div>
+                        <div className="text-2xl font-semibold text-amber-300">
+                          52°C
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-                <svg
-                  viewBox="0 0 320 160"
-                  className="h-52 w-full rounded-2xl border border-white/10 bg-slate-950/60 p-2"
-                >
-                  <defs>
-                    <linearGradient id="tempLine" x1="0" x2="1">
-                      <stop offset="0%" stopColor="#f59e0b" />
-                      <stop offset="100%" stopColor="#fb7185" />
-                    </linearGradient>
-                  </defs>
-                  {[0, 1, 2, 3].map((i) => (
-                    <line
-                      key={i}
-                      x1="16"
-                      x2="304"
-                      y1={16 + i * 32}
-                      y2={16 + i * 32}
-                      stroke="rgba(148,163,184,0.15)"
-                      strokeWidth="1"
-                    />
-                  ))}
-                  <path
-                    d={linePath(tempData)}
-                    fill="none"
-                    stroke="url(#tempLine)"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </section>
+                    <svg
+                      viewBox="0 0 320 160"
+                      className={`h-52 w-full ${glassInsetClass} p-2`}
+                    >
+                      <defs>
+                        <linearGradient id="tempLine" x1="0" x2="1">
+                          <stop offset="0%" stopColor="#f59e0b" />
+                          <stop offset="100%" stopColor="#fb7185" />
+                        </linearGradient>
+                      </defs>
+                      {[0, 1, 2, 3].map((i) => (
+                        <line
+                          key={i}
+                          x1="16"
+                          x2="304"
+                          y1={16 + i * 32}
+                          y2={16 + i * 32}
+                          stroke="rgba(148,163,184,0.15)"
+                          strokeWidth="1"
+                        />
+                      ))}
+                      <path
+                        d={linePath(tempData)}
+                        fill="none"
+                        stroke="url(#tempLine)"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </section>
 
-              <section className="rounded-[26px] border border-white/10 bg-slate-900/70 p-4 md:p-5">
+                  <section className={`${glassPanelClass} p-4 md:p-5`}>
+                    <div className="mb-4 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base md:text-lg font-semibold">
+                          트리거 로그
+                        </h3>
+                        <p className="text-sm text-slate-400">
+                          특정 이벤트 및 경고 이력
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                        {logs.length} events
+                      </span>
+                    </div>
+                    <div className={`h-52 overflow-auto ${glassInsetClass} p-3 space-y-3`}>
+                      {logs.map((log, idx) => (
+                        <div
+                          key={idx}
+                          className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <span
+                              className={`rounded-full border px-2 py-1 text-[11px] font-medium ${levelStyle(
+                                log.level
+                              )}`}
+                            >
+                              {log.level}
+                            </span>
+                            <span className="text-xs text-slate-400">{log.time}</span>
+                          </div>
+                          <p className="text-sm text-slate-200 leading-relaxed">
+                            {log.text}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              </>
+            )}
+
+            {activeTab === "events" && (
+              <section className={`${glassPanelClass} p-4 md:p-5`}>
                 <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <h3 className="text-base md:text-lg font-semibold">
-                      트리거 로그
-                    </h3>
-                    <p className="text-sm text-slate-400">
-                      특정 이벤트 및 경고 이력
-                    </p>
+                    <h3 className="text-base md:text-lg font-semibold">이벤트 로그</h3>
+                    <p className="text-sm text-slate-400">전체 이벤트 및 경고 이력</p>
                   </div>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-                    6 events
-                  </span>
                 </div>
-                <div className="h-52 overflow-auto rounded-2xl border border-white/10 bg-slate-950/60 p-3 space-y-3">
+                <div className="space-y-3">
                   {logs.map((log, idx) => (
                     <div
                       key={idx}
-                      className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"
+                      className={`${glassInsetClass} p-4`}
                     >
                       <div className="mb-2 flex items-center justify-between gap-3">
                         <span
@@ -693,17 +764,78 @@ export default function FireRobotDashboard() {
                         </span>
                         <span className="text-xs text-slate-400">{log.time}</span>
                       </div>
-                      <p className="text-sm text-slate-200 leading-relaxed">
-                        {log.text}
-                      </p>
+                      <p className="text-sm text-slate-200 leading-relaxed">{log.text}</p>
                     </div>
                   ))}
                 </div>
               </section>
-            </div>
+            )}
+
+            {activeTab === "overview" && (
+              <section className="space-y-5">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className={`${glassInsetClass} p-4`}>
+                    <div className="text-sm text-slate-400">총 모듈 수</div>
+                    <div className="mt-2 text-2xl font-semibold text-cyan-200">6</div>
+                  </div>
+                  <div className={`${glassInsetClass} p-4`}>
+                    <div className="text-sm text-slate-400">연결 상태</div>
+                    <div className="mt-2 text-2xl font-semibold text-emerald-300">
+                      {connectionItems.filter((item) => item.status === "connect").length}
+                    </div>
+                    <div className="text-xs text-slate-400">connect modules</div>
+                  </div>
+                  <div className={`${glassInsetClass} p-4`}>
+                    <div className="text-sm text-slate-400">비연결 상태</div>
+                    <div className="mt-2 text-2xl font-semibold text-rose-300">
+                      {connectionItems.filter((item) => item.status === "disconnect").length}
+                    </div>
+                    <div className="text-xs text-slate-400">disconnect modules</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className={`${glassInsetClass} p-4`}>
+                    <div className="text-sm text-slate-400">ROS Bridge</div>
+                    <div className="mt-2">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                          rosConnected
+                            ? "bg-emerald-500/15 text-emerald-300 border border-emerald-400/30"
+                            : "bg-rose-500/15 text-rose-300 border border-rose-400/30"
+                        }`}
+                      >
+                        {rosConnected ? "connect" : "disconnect"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {connectionItems.map((item) => (
+                    <div
+                      key={`${item.name}-overview`}
+                      className={`${glassInsetClass} p-4 flex items-center justify-between gap-3`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <img src={item.icon} alt={`${item.name} 아이콘`} className="h-5 w-5" />
+                        <span className="text-sm text-slate-200">{item.name}</span>
+                      </div>
+                      <div>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusStyle(
+                            item.status
+                          )}`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </main>
 
-          <aside className="border-t xl:border-t-0 xl:border-l border-white/10 bg-slate-950/50 p-4 md:p-5">
+          <aside className="border-t xl:border-t-0 xl:border-l border-white/10 bg-white/[0.03] backdrop-blur-xl p-4 md:p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">시스템 연결 상태</h2>
@@ -713,9 +845,9 @@ export default function FireRobotDashboard() {
               </span>
             </div>
 
-            <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 flex items-center justify-between gap-3">
+            <div className={`mb-3 ${glassInsetClass} p-4 flex items-center justify-between gap-3`}>
               <div className="flex items-center gap-3">
-                <span className="text-xl">🔌</span>
+                <img src={rosIcon} alt="ROS 아이콘" className="h-6 w-6" />
                 <div className="text-sm text-slate-300">ROS Bridge</div>
               </div>
               <span
@@ -733,10 +865,10 @@ export default function FireRobotDashboard() {
               {connectionItems.map((item) => (
                 <div
                   key={item.name}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 flex items-center justify-between gap-3"
+                  className={`${glassInsetClass} p-4 flex items-center justify-between gap-3`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-xl">{item.icon}</span>
+                    <img src={item.icon} alt={`${item.name} 아이콘`} className="h-6 w-6" />
                     <div className="font-medium text-slate-100">{item.name}</div>
                   </div>
                   <span

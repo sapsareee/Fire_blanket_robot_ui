@@ -1,0 +1,12 @@
+<svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g-battery" x1="4" y1="4" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#34D399"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="24" height="24" rx="8" fill="url(#g-battery)"/>
+  <rect x="8" y="10" width="10" height="8" rx="1.8" stroke="white" stroke-opacity="0.95" stroke-width="1.4"/>
+  <rect x="18" y="12" width="2" height="4" rx="1" fill="white" fill-opacity="0.95"/>
+  <rect x="9.5" y="11.5" width="6.8" height="5" rx="1" fill="white" fill-opacity="0.9"/>
+</svg>
