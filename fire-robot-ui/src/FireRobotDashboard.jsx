@@ -39,6 +39,8 @@ export default function FireRobotDashboard() {
   const [rosConnected, setRosConnected] = useState(false);
   const [thermalReloadKey, setThermalReloadKey] = useState(0);
   const [thermalImageOk, setThermalImageOk] = useState(false);
+  const [rgbReloadKey, setRgbReloadKey] = useState(0);
+  const [rgbImageOk, setRgbImageOk] = useState(false);
   const [rvizReloadKey, setRvizReloadKey] = useState(0);
   const [rvizImageOk, setRvizImageOk] = useState(false);
   const [topicStates, setTopicStates] = useState(createInitialTopicState());
@@ -67,6 +69,8 @@ export default function FireRobotDashboard() {
   // 브라우저에서 접근 가능한 주소로 바꾸세요.
   const thermalStreamUrl =
     `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/thermal/image&qos_profile=sensor_data`;
+  const rgbStreamUrl =
+    `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/rgb/image_raw&qos_profile=sensor_data`;
   const rvizStreamUrl =
     `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/rviz/image&qos_profile=sensor_data`;
 
@@ -326,9 +330,12 @@ export default function FireRobotDashboard() {
     return "text-sky-300 border-sky-400/30 bg-sky-500/10";
   };
 
+  const miniStatClass =
+    "rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-center";
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#1d4b4b,_#0b1220_35%,_#09111b_70%)] p-4 md:p-6 text-white">
-      <div className="mx-auto max-w-[1600px] rounded-[30px] border border-white/10 bg-slate-950/80 shadow-2xl backdrop-blur-xl overflow-hidden">
+      <div className="mx-auto w-full max-w-none 2xl:max-w-[2200px] rounded-[30px] border border-white/10 bg-slate-950/80 shadow-2xl backdrop-blur-xl overflow-hidden">
         <div className="grid min-h-[90vh] grid-cols-1 xl:grid-cols-[96px_minmax(0,1fr)_320px]">
           <aside className="border-b xl:border-b-0 xl:border-r border-white/10 bg-slate-950/70 p-3 md:p-4 flex xl:flex-col items-center xl:items-stretch justify-between gap-3">
             <div className="flex xl:flex-col items-center gap-3 w-full">
@@ -344,20 +351,25 @@ export default function FireRobotDashboard() {
             </div>
           </aside>
 
-          <main className="p-4 md:p-6 lg:p-7">
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <section className="rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg md:text-xl font-semibold">
-                      센서 모니터링
-                    </h2>
-                    <p className="text-sm text-slate-400">
-                      ROS2 열화상 스트림 표시
-                    </p>
+          <main className="min-w-0 p-4 md:p-6 lg:p-7">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-3 items-stretch">
+              <section className="flex flex-col rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="mb-1 flex items-center gap-2 flex-nowrap whitespace-nowrap">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/15 text-orange-300 text-xs">
+                        ♨
+                      </span>
+                      <h2 className="text-lg md:text-xl font-semibold whitespace-nowrap">
+                        열화상 카메라
+                      </h2>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium text-emerald-300">
+                      15 FPS
+                    </span>
                     <span
                       className={`rounded-full px-3 py-1 text-xs ${
                         thermalImageOk
@@ -380,35 +392,12 @@ export default function FireRobotDashboard() {
                   </div>
                 </div>
 
-                <div className="mb-3 flex items-center gap-2 text-xs">
-                  <span
-                    className={`rounded-full px-3 py-1 ${
-                      rosConnected
-                        ? "border border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
-                        : "border border-rose-400/30 bg-rose-500/10 text-rose-300"
-                    }`}
-                  >
-                    rosbridge {rosConnected ? "connected" : "disconnected"}
-                  </span>
-
-                  <span
-                    className={`rounded-full px-3 py-1 ${
-                      thermalTopicAlive
-                        ? "border border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
-                        : "border border-rose-400/30 bg-rose-500/10 text-rose-300"
-                    }`}
-                  >
-                    thermal status topic{" "}
-                    {thermalTopicAlive ? "alive" : "timeout/disconnect"}
-                  </span>
-                </div>
-
-                <div className="w-full max-w-2xl rounded-2xl border border-white/10 overflow-hidden relative">
+                <div className="relative mt-1 aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
                   <img
                     key={thermalReloadKey}
                     src={`${thermalStreamUrl}&reload=${thermalReloadKey}`}
                     alt="ROS2 thermal stream"
-                    className="w-full h-full object-cover"
+                    className="h-full w-full object-cover"
                     onLoad={(e) => {
                       const img = e.target;
                       setThermalImageSize({
@@ -424,30 +413,43 @@ export default function FireRobotDashboard() {
                   />
 
                   <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
+                  <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-slate-100 backdrop-blur-sm">
+                    0.0  2.0  4.0  6.0
+                  </div>
+                  <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-orange-300 backdrop-blur-sm">
+                    364°C
+                  </div>
                 </div>
 
-                {/* 최대 온도 표시 */}
-                <div className="mt-3 flex items-center justify-center">
-                  <div className="rounded-lg bg-black/50 backdrop-blur-sm border border-white/10 px-4 py-2">
-                    <div className="text-center">
-                      <div className="text-sm text-slate-400 mb-1">최대 온도</div>
-                      <div className="text-2xl font-bold text-orange-400">
-                        {maxTemperature !== null ? `${maxTemperature.toFixed(1)}°C` : '--°C'}
-                      </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <div className={miniStatClass}>
+                    <div className="text-[11px] text-slate-400">최고 온도</div>
+                    <div className="mt-1 text-lg font-semibold text-rose-300">
+                      {maxTemperature !== null ? `${maxTemperature.toFixed(1)}°C` : "--°C"}
                     </div>
+                  </div>
+                  <div className={miniStatClass}>
+                    <div className="text-[11px] text-slate-400">평균 온도</div>
+                    <div className="mt-1 text-lg font-semibold text-amber-300">71°C</div>
+                  </div>
+                  <div className={miniStatClass}>
+                    <div className="text-[11px] text-slate-400">최저 온도</div>
+                    <div className="mt-1 text-lg font-semibold text-sky-300">18°C</div>
                   </div>
                 </div>
               </section>
 
-              <section className="rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
+              <section className="flex flex-col rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
                 <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h2 className="text-lg md:text-xl font-semibold">
-                      자율주행 모니터링
-                    </h2>
-                    <p className="text-sm text-slate-400">
-                      RViz 화면을 실시간으로 확인하세요
-                    </p>
+                  <div className="min-w-0">
+                    <div className="mb-1 flex items-center gap-2 flex-nowrap whitespace-nowrap">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-500/15 text-cyan-300 text-xs">
+                        🧭
+                      </span>
+                      <h2 className="text-lg md:text-xl font-semibold whitespace-nowrap">
+                        자율주행 모니터링
+                      </h2>
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span
@@ -471,21 +473,92 @@ export default function FireRobotDashboard() {
                   </div>
                 </div>
 
-                <div className="aspect-square w-full rounded-2xl border border-white/10 overflow-hidden relative bg-slate-950/60">
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
+                    <img
+                      key={rvizReloadKey}
+                      src={`${rvizStreamUrl}&reload=${rvizReloadKey}`}
+                      alt="RViz live stream"
+                      className="h-full w-full object-cover"
+                      onLoad={() => {
+                        setRvizImageOk(true);
+                      }}
+                      onError={() => {
+                        setRvizImageOk(false);
+                      }}
+                    />
+
+                    <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
+                    <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-slate-100 backdrop-blur-sm">
+                      CAM FRONT
+                    </div>
+                    <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
+                      REC
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="flex flex-col rounded-[26px] border border-white/10 bg-slate-900/70 p-4 shadow-lg shadow-black/20">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="min-w-0">
+                    <div className="mb-1 flex items-center gap-2 flex-nowrap whitespace-nowrap">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-500/15 text-cyan-300 text-xs">
+                        📷
+                      </span>
+                      <h2 className="text-lg md:text-xl font-semibold whitespace-nowrap">
+                        RGB 카메라
+                      </h2>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-[11px] font-medium text-cyan-300">
+                      정상 - 30 FPS
+                    </span>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs ${
+                        rgbImageOk
+                          ? "border border-emerald-400/30 bg-emerald-500/15 text-emerald-300"
+                          : "border border-rose-400/30 bg-rose-500/15 text-rose-300"
+                      }`}
+                    >
+                      {rgbImageOk ? "LIVE" : "DISCONNECTED"}
+                    </span>
+
+                    <button
+                      onClick={() => {
+                        setRgbImageOk(false);
+                        setRgbReloadKey((v) => v + 1);
+                      }}
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:bg-white/10"
+                    >
+                      재연결
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
                   <img
-                    key={rvizReloadKey}
-                    src={`${rvizStreamUrl}&reload=${rvizReloadKey}`}
-                    alt="RViz live stream"
+                    key={rgbReloadKey}
+                    src={`${rgbStreamUrl}&reload=${rgbReloadKey}`}
+                    alt="RGB camera stream"
                     className="h-full w-full object-cover"
-                    onLoad={(e) => {
-                      setRvizImageOk(true);
+                    onLoad={() => {
+                      setRgbImageOk(true);
                     }}
                     onError={() => {
-                      setRvizImageOk(false);
+                      setRgbImageOk(false);
                     }}
                   />
 
                   <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
+                  <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-slate-100 backdrop-blur-sm">
+                    CAM FRONT · 5:45:02
+                  </div>
+                  <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
+                    REC
+                  </div>
                 </div>
               </section>
             </div>
