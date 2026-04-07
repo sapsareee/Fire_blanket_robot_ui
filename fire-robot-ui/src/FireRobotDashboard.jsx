@@ -22,6 +22,7 @@ const TOPIC_CONFIG = [
   { key: "thermal_max_temp", name: "열화상 최대 온도", topic: "/thermal/max_temperature" },
   { key: "vision_sensor", name: "비전 센서", topic: "/vision_sensor/status" },
   { key: "battery_sensor", name: "배터리 센서", topic: "/battery_sensor/status" },
+  { key: "motor", name: "모터", topic: "/motor/status" },
   { key: "temperature_sensor", name: "온도센서", topic: "/temperature_sensor/status" },
 ];
 
@@ -279,6 +280,15 @@ export default function FireRobotDashboard() {
     };
   }, []);
 
+  const iconMap = {
+    autonomy: "🧭",
+    thermal_camera: "♨",
+    vision_sensor: "📷",
+    battery_sensor: "🔋",
+    motor: "⚙️",
+    temperature_sensor: "🌡️",
+  };
+
   const connectionItems = useMemo(() => {
     return TOPIC_CONFIG.filter(cfg => cfg.key !== 'thermal_max_temp').map((cfg) => {
       const state = topicStates[cfg.key];
@@ -287,11 +297,7 @@ export default function FireRobotDashboard() {
       return {
         name: cfg.name,
         status: isAlive ? "connect" : "disconnect",
-        detail: state?.timedOut
-          ? "timeout (4초 이상 무응답)"
-          : state?.value
-          ? "Bool true 수신 중"
-          : "Bool false 수신",
+        icon: iconMap[cfg.key] || "•",
       };
     });
   }, [topicStates]);
@@ -343,11 +349,8 @@ export default function FireRobotDashboard() {
                 FR
               </div>
               <button className="w-full rounded-2xl bg-blue-500/20 border border-blue-400/30 px-3 py-3 text-sm font-medium text-blue-200 shadow-inner shadow-blue-500/10">
-                Dashboard
+                Home
               </button>
-            </div>
-            <div className="hidden xl:block rounded-2xl border border-white/10 bg-white/5 p-3 text-center text-[11px] text-slate-300">
-              Live Monitoring
             </div>
           </aside>
 
@@ -616,7 +619,7 @@ export default function FireRobotDashboard() {
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <h3 className="text-base md:text-lg font-semibold">
-                      온도 그래프
+                      로봇의 내부 온도 추이
                     </h3>
                     <p className="text-sm text-slate-400">
                       내부 온도 및 상승 추세
@@ -704,26 +707,26 @@ export default function FireRobotDashboard() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">시스템 연결 상태</h2>
-                <p className="text-sm text-slate-400">모듈별 연결 여부</p>
               </div>
               <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300">
-                5 Modules
+                6 Modules
               </span>
             </div>
 
-            <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-              <div className="flex items-center justify-between gap-3">
+            <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🔌</span>
                 <div className="text-sm text-slate-300">ROS Bridge</div>
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
-                    rosConnected
-                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-400/30"
-                      : "bg-rose-500/15 text-rose-300 border border-rose-400/30"
-                  }`}
-                >
-                  {rosConnected ? "connect" : "disconnect"}
-                </span>
               </div>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                  rosConnected
+                    ? "bg-emerald-500/15 text-emerald-300 border border-emerald-400/30"
+                    : "bg-rose-500/15 text-rose-300 border border-rose-400/30"
+                }`}
+              >
+                {rosConnected ? "connect" : "disconnect"}
+              </span>
             </div>
 
             <div className="space-y-3">
@@ -732,11 +735,9 @@ export default function FireRobotDashboard() {
                   key={item.name}
                   className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 flex items-center justify-between gap-3"
                 >
-                  <div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{item.icon}</span>
                     <div className="font-medium text-slate-100">{item.name}</div>
-                    <div className="mt-1 text-xs text-slate-400">
-                      {item.detail}
-                    </div>
                   </div>
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusStyle(
