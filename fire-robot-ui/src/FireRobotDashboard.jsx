@@ -22,8 +22,12 @@ const ROSBRIDGE_URL = `${WS_PROTOCOL}://${ROS_HOST}:${ROSBRIDGE_PORT}`;
 const TIMEOUT_MS = 4000;
 const CHECK_INTERVAL_MS = 1000;
 const MAX_RECONNECT_ATTEMPTS = 10; // 최대 재연결 시도 횟수
-const GRAPH_POINT_COUNT = 16;
-const GRAPH_UPDATE_MS = 1000;
+const DEFAULT_SAMPLE_INTERVAL_MS = 1000;
+const SAMPLE_INTERVAL_OPTIONS = [500, 1000, 2000];
+const TREND_WINDOW_OPTIONS = [16, 32, 64, 120];
+const DEFAULT_TREND_WINDOW = 32;
+const MAX_HISTORY_POINTS = 240;
+const INITIAL_HISTORY_POINTS = 64;
 
 const BATTERY_MIN_V = 0;
 const BATTERY_MAX_V = 15;
@@ -54,10 +58,10 @@ const formatTimeLabel = (timeMs) => {
   return `${hh}:${mm}:${ss}`;
 };
 
-const createInitialSeries = (count, baseValue, variance, min, max) => {
+const createInitialSeries = (count, baseValue, variance, min, max, intervalMs) => {
   const now = Date.now();
   return Array.from({ length: count }, (_, idx) => {
-    const timestamp = now - (count - 1 - idx) * GRAPH_UPDATE_MS;
+    const timestamp = now - (count - 1 - idx) * intervalMs;
     const randomOffset = (Math.random() * 2 - 1) * variance;
     return {
       t: timestamp,
@@ -104,22 +108,26 @@ export default function FireRobotDashboard() {
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef(null);
   const rosInstanceRef = useRef(null);
+  const [sampleIntervalMs, setSampleIntervalMs] = useState(DEFAULT_SAMPLE_INTERVAL_MS);
+  const [trendWindowPoints, setTrendWindowPoints] = useState(DEFAULT_TREND_WINDOW);
   const [batterySeries, setBatterySeries] = useState(() =>
     createInitialSeries(
-      GRAPH_POINT_COUNT,
+      INITIAL_HISTORY_POINTS,
       BATTERY_BASE_V,
       BATTERY_INITIAL_VARIANCE,
       BATTERY_MIN_V,
-      BATTERY_MAX_V
+      BATTERY_MAX_V,
+      DEFAULT_SAMPLE_INTERVAL_MS
     )
   );
   const [tempSeries, setTempSeries] = useState(() =>
     createInitialSeries(
-      GRAPH_POINT_COUNT,
+      INITIAL_HISTORY_POINTS,
       TEMP_BASE_C,
       TEMP_INITIAL_VARIANCE,
       TEMP_MIN_C,
-      TEMP_MAX_C
+      TEMP_MAX_C,
+      DEFAULT_SAMPLE_INTERVAL_MS
     )
   );
 
@@ -363,7 +371,7 @@ export default function FireRobotDashboard() {
           value: Number(nextValue.toFixed(2)),
         };
 
-        return [...prev.slice(-(GRAPH_POINT_COUNT - 1)), next];
+        return [...prev.slice(-(MAX_HISTORY_POINTS - 1)), next];
       });
 
       setTempSeries((prev) => {
@@ -378,12 +386,12 @@ export default function FireRobotDashboard() {
           value: Number(nextValue.toFixed(1)),
         };
 
-        return [...prev.slice(-(GRAPH_POINT_COUNT - 1)), next];
+        return [...prev.slice(-(MAX_HISTORY_POINTS - 1)), next];
       });
-    }, GRAPH_UPDATE_MS);
+    }, sampleIntervalMs);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [sampleIntervalMs]);
 
   const iconMap = {
     autonomy: autonomyIcon,
@@ -411,6 +419,15 @@ export default function FireRobotDashboard() {
     const state = topicStates.thermal_camera;
     return state && !state.timedOut && state.value === true;
   }, [topicStates]);
+
+  const batteryViewSeries = useMemo(
+    () => batterySeries.slice(-trendWindowPoints),
+    [batterySeries, trendWindowPoints]
+  );
+  const tempViewSeries = useMemo(
+    () => tempSeries.slice(-trendWindowPoints),
+    [tempSeries, trendWindowPoints]
+  );
 
 
   const graphX = (index, length, frame = GRAPH_FRAME) => {
@@ -442,6 +459,24 @@ export default function FireRobotDashboard() {
     if (length < 2) return [0];
     const raw = [0, Math.floor((length - 1) / 3), Math.floor((2 * (length - 1)) / 3), length - 1];
     return [...new Set(raw)];
+  };
+
+  const zoomInTrend = () => {
+    setTrendWindowPoints((prev) => {
+      const idx = TREND_WINDOW_OPTIONS.findIndex((value) => value === prev);
+      if (idx <= 0) return TREND_WINDOW_OPTIONS[0];
+      return TREND_WINDOW_OPTIONS[idx - 1];
+    });
+  };
+
+  const zoomOutTrend = () => {
+    setTrendWindowPoints((prev) => {
+      const idx = TREND_WINDOW_OPTIONS.findIndex((value) => value === prev);
+      if (idx === -1 || idx >= TREND_WINDOW_OPTIONS.length - 1) {
+        return TREND_WINDOW_OPTIONS[TREND_WINDOW_OPTIONS.length - 1];
+      }
+      return TREND_WINDOW_OPTIONS[idx + 1];
+    });
   };
 
   const statusStyle = (status) =>
@@ -544,12 +579,12 @@ export default function FireRobotDashboard() {
                   </div>
                 </div>
 
-                <div className={`relative mt-1 aspect-square w-full overflow-hidden ${glassInsetClass}`}>
+                <div className={`relative mt-1 aspect-square w-full overflow-hidden bg-black/40 ${glassInsetClass}`}>
                   <img
                     key={thermalReloadKey}
                     src={`${thermalStreamUrl}&reload=${thermalReloadKey}`}
                     alt="ROS2 thermal stream"
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-contain"
                     onLoad={(e) => {
                       const img = e.target;
                       setThermalImageSize({
@@ -577,16 +612,16 @@ export default function FireRobotDashboard() {
                   <div className={miniStatClass}>
                     <div className="text-[11px] text-slate-400">최고 온도</div>
                     <div className="mt-1 text-lg font-semibold text-rose-300">
-                      {maxTemperature !== null ? `${maxTemperature.toFixed(1)}°C` : "--°C"}
+                      {maxTemperature !== null ? `${maxTemperature.toFixed(1)}°C` : "34.4°C"}
                     </div>
                   </div>
                   <div className={miniStatClass}>
                     <div className="text-[11px] text-slate-400">평균 온도</div>
-                    <div className="mt-1 text-lg font-semibold text-amber-300">71°C</div>
+                    <div className="mt-1 text-lg font-semibold text-amber-300">30.0°C</div>
                   </div>
                   <div className={miniStatClass}>
                     <div className="text-[11px] text-slate-400">최저 온도</div>
-                    <div className="mt-1 text-lg font-semibold text-sky-300">18°C</div>
+                    <div className="mt-1 text-lg font-semibold text-sky-300">24.4°C</div>
                   </div>
                 </div>
               </section>
@@ -715,6 +750,39 @@ export default function FireRobotDashboard() {
               </section>
                 </div>
 
+                <div className="mt-5 mb-3 flex flex-wrap items-center gap-2">
+                  <div className="rounded-full border border-white/15 bg-white/[0.05] px-3 py-1.5 text-xs text-slate-200">
+                    샘플링 주기
+                  </div>
+                  <select
+                    value={sampleIntervalMs}
+                    onChange={(e) => setSampleIntervalMs(Number(e.target.value))}
+                    className="rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs text-slate-100"
+                  >
+                    {SAMPLE_INTERVAL_OPTIONS.map((ms) => (
+                      <option key={ms} value={ms}>
+                        {ms} ms
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="rounded-full border border-white/15 bg-white/[0.05] px-3 py-1.5 text-xs text-slate-200">
+                    추이 범위 {trendWindowPoints}포인트
+                  </div>
+                  <button
+                    onClick={zoomInTrend}
+                    className="rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs text-slate-100 hover:bg-white/[0.1]"
+                  >
+                    축 확대
+                  </button>
+                  <button
+                    onClick={zoomOutTrend}
+                    className="rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs text-slate-100 hover:bg-white/[0.1]"
+                  >
+                    축 축소
+                  </button>
+                </div>
+
                 <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)]">
                   <section className={`${glassPanelClass} p-4 md:p-5`}>
                     <div className="mb-4 flex items-center justify-between">
@@ -759,9 +827,9 @@ export default function FireRobotDashboard() {
                           </g>
                         );
                       })}
-                      {axisLabelIndexes(batterySeries.length).map((idx) => {
-                        const x = graphX(idx, batterySeries.length);
-                        const label = batterySeries[idx]?.label?.slice(3) ?? "";
+                      {axisLabelIndexes(batteryViewSeries.length).map((idx) => {
+                        const x = graphX(idx, batteryViewSeries.length);
+                        const label = batteryViewSeries[idx]?.label?.slice(3) ?? "";
                         return (
                           <text key={`battery-x-${idx}`} x={x} y="154" textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.8)">
                             {label}
@@ -769,7 +837,7 @@ export default function FireRobotDashboard() {
                         );
                       })}
                       <path
-                        d={linePath(batterySeries, BATTERY_MIN_V, BATTERY_MAX_V)}
+                        d={linePath(batteryViewSeries, BATTERY_MIN_V, BATTERY_MAX_V)}
                         fill="none"
                         stroke="url(#batteryLine)"
                         strokeWidth="4"
@@ -821,9 +889,9 @@ export default function FireRobotDashboard() {
                           </g>
                         );
                       })}
-                      {axisLabelIndexes(tempSeries.length).map((idx) => {
-                        const x = graphX(idx, tempSeries.length);
-                        const label = tempSeries[idx]?.label?.slice(3) ?? "";
+                      {axisLabelIndexes(tempViewSeries.length).map((idx) => {
+                        const x = graphX(idx, tempViewSeries.length);
+                        const label = tempViewSeries[idx]?.label?.slice(3) ?? "";
                         return (
                           <text key={`temp-x-${idx}`} x={x} y="154" textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.8)">
                             {label}
@@ -831,7 +899,7 @@ export default function FireRobotDashboard() {
                         );
                       })}
                       <path
-                        d={linePath(tempSeries, TEMP_MIN_C, TEMP_MAX_C)}
+                        d={linePath(tempViewSeries, TEMP_MIN_C, TEMP_MAX_C)}
                         fill="none"
                         stroke="url(#tempLine)"
                         strokeWidth="4"
