@@ -78,7 +78,6 @@ const TOPIC_CONFIG = [
   { key: "battery_sensor", name: "배터리 상태", topic: "/battery_sensor/status" },
   { key: "motor", name: "모터 상태", topic: "/motor/status" },
   { key: "temperature_sensor", name: "로봇 온도", topic: "/temperature_sensor/status" },
-  { key: "internal_temperature", name: "내부 온도", topic: "/robot/internal_temperature" },
 ];
 
 const createInitialTopicState = () =>
@@ -110,19 +109,12 @@ export default function FireRobotDashboard() {
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef(null);
   const rosInstanceRef = useRef(null);
+  const internalTempLastSeenRef = useRef(0);
+  const batteryVoltageLastSeenRef = useRef(0);
   const [sampleIntervalMs, setSampleIntervalMs] = useState(DEFAULT_SAMPLE_INTERVAL_MS);
   const [trendWindowPoints, setTrendWindowPoints] = useState(DEFAULT_TREND_WINDOW);
   const [batterySeries, setBatterySeries] = useState([]);
-  const [tempSeries, setTempSeries] = useState(() =>
-    createInitialSeries(
-      INITIAL_HISTORY_POINTS,
-      TEMP_BASE_C,
-      TEMP_INITIAL_VARIANCE,
-      TEMP_MIN_C,
-      TEMP_MAX_C,
-      DEFAULT_SAMPLE_INTERVAL_MS
-    )
-  );
+  const [tempSeries, setTempSeries] = useState([]);
 
   useEffect(() => {
     // debug: log initial temperature series and constants
@@ -315,8 +307,11 @@ export default function FireRobotDashboard() {
         if (!Number.isFinite(voltage)) return;
 
         const now = Date.now();
+        batteryVoltageLastSeenRef.current = now;
         const roundedVoltage = Number(voltage.toFixed(2));
         const clampedVoltage = clamp(roundedVoltage, BATTERY_MIN_V, BATTERY_MAX_V);
+
+        console.log("[ROS] Battery voltage received:", clampedVoltage);
 
         setBatteryVoltage(clampedVoltage);
         setBatterySeries((prev) => {
@@ -325,8 +320,11 @@ export default function FireRobotDashboard() {
             label: formatTimeLabel(now),
             value: clampedVoltage,
           };
-
-          return [...prev.slice(-(MAX_HISTORY_POINTS - 1)), next];
+          // Keep only the latest MAX_HISTORY_POINTS
+          const updated = prev.length >= MAX_HISTORY_POINTS 
+            ? [...prev.slice(1), next]
+            : [...prev, next];
+          return updated;
         });
       });
 
@@ -346,8 +344,11 @@ export default function FireRobotDashboard() {
         if (!Number.isFinite(tempValue)) return;
 
         const now = Date.now();
+        internalTempLastSeenRef.current = now;
         const clampedTemp = clamp(tempValue, TEMP_MIN_C, TEMP_MAX_C);
         const roundedTemp = Number(clampedTemp.toFixed(1));
+
+        console.log("[ROS] Internal Temperature received:", roundedTemp);
 
         setInternalTemperature(roundedTemp);
         setTempSeries((prev) => {
@@ -356,15 +357,42 @@ export default function FireRobotDashboard() {
             label: formatTimeLabel(now),
             value: roundedTemp,
           };
-
-          return [...prev.slice(-(MAX_HISTORY_POINTS - 1)), next];
+          // Keep only the latest MAX_HISTORY_POINTS
+          const updated = prev.length >= MAX_HISTORY_POINTS 
+            ? [...prev.slice(1), next]
+            : [...prev, next];
+          return updated;
         });
+
+        // Update topic state for timeout tracking
+        setTopicStates((prev) => ({
+          ...prev,
+          internal_temperature: {
+            value: roundedTemp,
+            lastSeen: now,
+            timedOut: false,
+          },
+        }));
       });
 
       subscribers.push(internalTempTopic);
 
       timeoutChecker = setInterval(() => {
         const now = Date.now();
+
+        // Check battery voltage timeout
+        if (batteryVoltageLastSeenRef.current > 0 && now - batteryVoltageLastSeenRef.current > TIMEOUT_MS) {
+          console.log("[ROS] Battery voltage timeout detected");
+          setBatteryVoltage(null);
+          batteryVoltageLastSeenRef.current = 0;
+        }
+
+        // Check internal temperature timeout
+        if (internalTempLastSeenRef.current > 0 && now - internalTempLastSeenRef.current > TIMEOUT_MS) {
+          console.log("[ROS] Internal temperature timeout detected");
+          setInternalTemperature(null);
+          internalTempLastSeenRef.current = 0;
+        }
 
         setTopicStates((prev) => {
           let changed = false;
@@ -392,6 +420,51 @@ export default function FireRobotDashboard() {
     // 초기 연결
     connectRos();
 
+    // Keep updating series even when no topic data to make graph flow
+    const graphFlowTimer = setInterval(() => {
+      const now = Date.now();
+
+      // Update battery series if no recent data received from topic
+      setBatterySeries((prev) => {
+        if (prev.length === 0) return prev;
+        // If battery topic data hasn't arrived recently, copy last value
+        if (now - batteryVoltageLastSeenRef.current > sampleIntervalMs * 0.8) {
+          const lastPoint = prev[prev.length - 1];
+          const next = {
+            t: now,
+            label: formatTimeLabel(now),
+            value: lastPoint.value,
+          };
+          console.log("[GRAPH] Auto-flowing battery data:", next.value);
+          const updated = prev.length >= MAX_HISTORY_POINTS 
+            ? [...prev.slice(1), next]
+            : [...prev, next];
+          return updated;
+        }
+        return prev;
+      });
+
+      // Update temp series if no recent data received from topic
+      setTempSeries((prev) => {
+        if (prev.length === 0) return prev;
+        // If temperature topic data hasn't arrived recently, copy last value
+        if (now - internalTempLastSeenRef.current > sampleIntervalMs * 0.8) {
+          const lastPoint = prev[prev.length - 1];
+          const next = {
+            t: now,
+            label: formatTimeLabel(now),
+            value: lastPoint.value,
+          };
+          console.log("[GRAPH] Auto-flowing temp data:", next.value);
+          const updated = prev.length >= MAX_HISTORY_POINTS 
+            ? [...prev.slice(1), next]
+            : [...prev, next];
+          return updated;
+        }
+        return prev;
+      });
+    }, sampleIntervalMs);
+
     return () => {
       isUnmounted = true;
 
@@ -401,6 +474,10 @@ export default function FireRobotDashboard() {
 
       if (timeoutChecker) {
         clearInterval(timeoutChecker);
+      }
+
+      if (graphFlowTimer) {
+        clearInterval(graphFlowTimer);
       }
 
       subscribers.forEach((topic) => {
