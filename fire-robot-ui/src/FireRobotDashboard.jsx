@@ -23,6 +23,7 @@ const TIMEOUT_MS = 4000;
 const CHECK_INTERVAL_MS = 1000;
 const MAX_RECONNECT_ATTEMPTS = 10; // 최대 재연결 시도 횟수
 const DEFAULT_SAMPLE_INTERVAL_MS = 1000;
+const BATTERY_VOLTAGE_TOPIC = "/battery_voltage";
 const SAMPLE_INTERVAL_OPTIONS = [500, 1000, 2000];
 const TREND_WINDOW_OPTIONS = [16, 32, 64, 120];
 const DEFAULT_TREND_WINDOW = 32;
@@ -31,8 +32,6 @@ const INITIAL_HISTORY_POINTS = 64;
 
 const BATTERY_MIN_V = 0;
 const BATTERY_MAX_V = 15;
-const BATTERY_BASE_V = 11.1;
-const BATTERY_INITIAL_VARIANCE = 0.3;
 
 const TEMP_MIN_C = 0;
 const TEMP_MAX_C = 100;
@@ -103,6 +102,7 @@ export default function FireRobotDashboard() {
   const [topicStates, setTopicStates] = useState(createInitialTopicState());
   const [thermalImageSize, setThermalImageSize] = useState({ width: 0, height: 0 });
   const [maxTemperature, setMaxTemperature] = useState(null);
+  const [batteryVoltage, setBatteryVoltage] = useState(null);
 
   // 재연결 로직용 ref
   const reconnectAttemptRef = useRef(0);
@@ -110,16 +110,7 @@ export default function FireRobotDashboard() {
   const rosInstanceRef = useRef(null);
   const [sampleIntervalMs, setSampleIntervalMs] = useState(DEFAULT_SAMPLE_INTERVAL_MS);
   const [trendWindowPoints, setTrendWindowPoints] = useState(DEFAULT_TREND_WINDOW);
-  const [batterySeries, setBatterySeries] = useState(() =>
-    createInitialSeries(
-      INITIAL_HISTORY_POINTS,
-      BATTERY_BASE_V,
-      BATTERY_INITIAL_VARIANCE,
-      BATTERY_MIN_V,
-      BATTERY_MAX_V,
-      DEFAULT_SAMPLE_INTERVAL_MS
-    )
-  );
+  const [batterySeries, setBatterySeries] = useState([]);
   const [tempSeries, setTempSeries] = useState(() =>
     createInitialSeries(
       INITIAL_HISTORY_POINTS,
@@ -297,6 +288,35 @@ export default function FireRobotDashboard() {
         }
       });
 
+      const batteryVoltageTopic = new ROSLIB.Topic({
+        ros,
+        name: BATTERY_VOLTAGE_TOPIC,
+        messageType: "std_msgs/msg/Float32",
+      });
+
+      batteryVoltageTopic.subscribe((message) => {
+        if (isUnmounted) return;
+
+        const voltage = Number(message.data);
+        if (!Number.isFinite(voltage)) return;
+
+        const now = Date.now();
+        const roundedVoltage = Number(voltage.toFixed(2));
+
+        setBatteryVoltage(roundedVoltage);
+        setBatterySeries((prev) => {
+          const next = {
+            t: now,
+            label: formatTimeLabel(now),
+            value: roundedVoltage,
+          };
+
+          return [...prev.slice(-(MAX_HISTORY_POINTS - 1)), next];
+        });
+      });
+
+      subscribers.push(batteryVoltageTopic);
+
       timeoutChecker = setInterval(() => {
         const now = Date.now();
 
@@ -358,21 +378,6 @@ export default function FireRobotDashboard() {
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now();
-
-      setBatterySeries((prev) => {
-        const lastValue = prev[prev.length - 1]?.value ?? BATTERY_BASE_V;
-        const jitter = (Math.random() * 2 - 1) * 0.06;
-        const restore = (BATTERY_BASE_V - lastValue) * 0.12;
-        const nextValue = clamp(lastValue + jitter + restore, BATTERY_MIN_V, BATTERY_MAX_V);
-
-        const next = {
-          t: now,
-          label: formatTimeLabel(now),
-          value: Number(nextValue.toFixed(2)),
-        };
-
-        return [...prev.slice(-(MAX_HISTORY_POINTS - 1)), next];
-      });
 
       setTempSeries((prev) => {
         const lastValue = prev[prev.length - 1]?.value ?? TEMP_BASE_C;
@@ -797,7 +802,7 @@ export default function FireRobotDashboard() {
                       <div className="text-right">
                         <div className="text-sm text-slate-400">현재 전압</div>
                         <div className="text-2xl font-semibold text-emerald-300">
-                          {batterySeries[batterySeries.length - 1]?.value.toFixed(2)}V
+                          {batteryVoltage !== null ? `${batteryVoltage.toFixed(2)}V` : "대기중"}
                         </div>
                       </div>
                     </div>
@@ -836,6 +841,17 @@ export default function FireRobotDashboard() {
                           </text>
                         );
                       })}
+                      {batteryViewSeries.length === 0 && (
+                        <text
+                          x="160"
+                          y="86"
+                          textAnchor="middle"
+                          fontSize="12"
+                          fill="rgba(203,213,225,0.75)"
+                        >
+                          /battery_voltage 수신 대기 중
+                        </text>
+                      )}
                       <path
                         d={linePath(batteryViewSeries, BATTERY_MIN_V, BATTERY_MAX_V)}
                         fill="none"
