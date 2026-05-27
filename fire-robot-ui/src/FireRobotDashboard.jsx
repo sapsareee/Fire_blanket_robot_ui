@@ -33,10 +33,10 @@ const INITIAL_HISTORY_POINTS = 64;
 const BATTERY_MIN_V = 10.5;
 const BATTERY_MAX_V = 11.5;
 
-const TEMP_MIN_C = 0;
-const TEMP_MAX_C = 100;
-const TEMP_BASE_C = 30;
-const TEMP_INITIAL_VARIANCE = 5;
+const TEMP_MIN_C = 30;
+const TEMP_MAX_C = 50;
+const TEMP_BASE_C = 40;
+const TEMP_INITIAL_VARIANCE = 0.2;
 
 const GRAPH_FRAME = {
   width: 320,
@@ -121,6 +121,18 @@ export default function FireRobotDashboard() {
       DEFAULT_SAMPLE_INTERVAL_MS
     )
   );
+
+  useEffect(() => {
+    // debug: log initial temperature series and constants
+    try {
+      // eslint-disable-next-line no-console
+      console.log("[DEBUG] TEMP_BASE_C, TEMP_INITIAL_VARIANCE, TEMP_MIN_C, TEMP_MAX_C", TEMP_BASE_C, TEMP_INITIAL_VARIANCE, TEMP_MIN_C, TEMP_MAX_C);
+      // eslint-disable-next-line no-console
+      console.log("[DEBUG] tempSeries sample:", tempSeries.slice(0, 5).map(s => s.value));
+    } catch (e) {
+      // ignore
+    }
+  }, []);
 
   const logs = [
     { time: "14:21:08", level: "INFO", text: "자율주행 경로 추종 정상 동작" },
@@ -382,8 +394,9 @@ export default function FireRobotDashboard() {
 
       setTempSeries((prev) => {
         const lastValue = prev[prev.length - 1]?.value ?? TEMP_BASE_C;
-        const jitter = (Math.random() * 2 - 1) * 1.0;
-        const restore = (TEMP_BASE_C - lastValue) * 0.08;
+        const jitterAmp = 0.1 + Math.random() * 0.2; // 0.1 ~ 0.3
+        const jitter = (Math.random() * 2 - 1) * jitterAmp;
+        const restore = (TEMP_BASE_C - lastValue) * 0.02; // weaker restore to keep near base
         const nextValue = clamp(lastValue + jitter + restore, TEMP_MIN_C, TEMP_MAX_C);
 
         const next = {
@@ -890,7 +903,7 @@ export default function FireRobotDashboard() {
                           <stop offset="100%" stopColor="#fb7185" />
                         </linearGradient>
                       </defs>
-                      {[0, 20, 40, 60, 80, 100].map((tick) => {
+                      {[30, 35, 40, 45, 50].map((tick) => {
                         const y = graphY(tick, TEMP_MIN_C, TEMP_MAX_C);
                         return (
                           <g key={tick}>
