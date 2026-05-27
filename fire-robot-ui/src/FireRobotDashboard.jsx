@@ -30,8 +30,8 @@ const DEFAULT_TREND_WINDOW = 32;
 const MAX_HISTORY_POINTS = 240;
 const INITIAL_HISTORY_POINTS = 64;
 
-const BATTERY_MIN_V = 0;
-const BATTERY_MAX_V = 15;
+const BATTERY_MIN_V = 10.5;
+const BATTERY_MAX_V = 11.5;
 
 const TEMP_MIN_C = 0;
 const TEMP_MAX_C = 100;
@@ -302,13 +302,14 @@ export default function FireRobotDashboard() {
 
         const now = Date.now();
         const roundedVoltage = Number(voltage.toFixed(2));
+        const clampedVoltage = clamp(roundedVoltage, BATTERY_MIN_V, BATTERY_MAX_V);
 
-        setBatteryVoltage(roundedVoltage);
+        setBatteryVoltage(clampedVoltage);
         setBatterySeries((prev) => {
           const next = {
             t: now,
             label: formatTimeLabel(now),
-            value: roundedVoltage,
+            value: clampedVoltage,
           };
 
           return [...prev.slice(-(MAX_HISTORY_POINTS - 1)), next];
@@ -816,7 +817,7 @@ export default function FireRobotDashboard() {
                           <stop offset="100%" stopColor="#60a5fa" />
                         </linearGradient>
                       </defs>
-                      {[0, 5, 10, 15].map((tick) => {
+                      {[10.5, 11.0, 11.5].map((tick) => {
                         const y = graphY(tick, BATTERY_MIN_V, BATTERY_MAX_V);
                         return (
                           <g key={tick}>
