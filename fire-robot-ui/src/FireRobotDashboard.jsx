@@ -78,6 +78,7 @@ const TOPIC_CONFIG = [
   { key: "battery_sensor", name: "배터리 상태", topic: "/battery_sensor/status" },
   { key: "motor", name: "모터 상태", topic: "/motor/status" },
   { key: "temperature_sensor", name: "로봇 온도", topic: "/temperature_sensor/status" },
+  { key: "internal_temperature", name: "내부 온도", topic: "/robot/internal_temperature" },
 ];
 
 const createInitialTopicState = () =>
@@ -103,6 +104,7 @@ export default function FireRobotDashboard() {
   const [thermalImageSize, setThermalImageSize] = useState({ width: 0, height: 0 });
   const [maxTemperature, setMaxTemperature] = useState(null);
   const [batteryVoltage, setBatteryVoltage] = useState(null);
+  const [internalTemperature, setInternalTemperature] = useState(null);
 
   // 재연결 로직용 ref
   const reconnectAttemptRef = useRef(0);
@@ -330,6 +332,37 @@ export default function FireRobotDashboard() {
 
       subscribers.push(batteryVoltageTopic);
 
+      // Internal temperature subscriber
+      const internalTempTopic = new ROSLIB.Topic({
+        ros,
+        name: "/robot/internal_temperature",
+        messageType: "std_msgs/msg/Float32",
+      });
+
+      internalTempTopic.subscribe((message) => {
+        if (isUnmounted) return;
+
+        const tempValue = Number(message.data);
+        if (!Number.isFinite(tempValue)) return;
+
+        const now = Date.now();
+        const clampedTemp = clamp(tempValue, TEMP_MIN_C, TEMP_MAX_C);
+        const roundedTemp = Number(clampedTemp.toFixed(1));
+
+        setInternalTemperature(roundedTemp);
+        setTempSeries((prev) => {
+          const next = {
+            t: now,
+            label: formatTimeLabel(now),
+            value: roundedTemp,
+          };
+
+          return [...prev.slice(-(MAX_HISTORY_POINTS - 1)), next];
+        });
+      });
+
+      subscribers.push(internalTempTopic);
+
       timeoutChecker = setInterval(() => {
         const now = Date.now();
 
@@ -388,29 +421,7 @@ export default function FireRobotDashboard() {
     };
   }, []);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const now = Date.now();
-
-      setTempSeries((prev) => {
-        const lastValue = prev[prev.length - 1]?.value ?? TEMP_BASE_C;
-        const jitterAmp = 0.1 + Math.random() * 0.2; // 0.1 ~ 0.3
-        const jitter = (Math.random() * 2 - 1) * jitterAmp;
-        const restore = (TEMP_BASE_C - lastValue) * 0.02; // weaker restore to keep near base
-        const nextValue = clamp(lastValue + jitter + restore, TEMP_MIN_C, TEMP_MAX_C);
-
-        const next = {
-          t: now,
-          label: formatTimeLabel(now),
-          value: Number(nextValue.toFixed(1)),
-        };
-
-        return [...prev.slice(-(MAX_HISTORY_POINTS - 1)), next];
-      });
-    }, sampleIntervalMs);
-
-    return () => clearInterval(timer);
-  }, [sampleIntervalMs]);
+  // Temperature data is now received from /robot/internal_temperature topic
 
   const iconMap = {
     autonomy: autonomyIcon,
@@ -889,7 +900,7 @@ export default function FireRobotDashboard() {
                       <div className="text-right">
                         <div className="text-sm text-slate-400">현재 온도</div>
                         <div className="text-2xl font-semibold text-amber-300">
-                          {tempSeries[tempSeries.length - 1]?.value.toFixed(1)}°C
+                          {internalTemperature !== null ? `${internalTemperature.toFixed(1)}°C` : "대기중"}
                         </div>
                       </div>
                     </div>
