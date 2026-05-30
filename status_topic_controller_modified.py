@@ -4,6 +4,9 @@ from std_msgs.msg import Bool, Float32
 import threading
 import random
 import time
+import subprocess
+import signal
+import os
 
 
 TEMP_VALUE_TOPIC = '/robot/internal_temperature'
@@ -64,6 +67,10 @@ class StatusTopicController(Node):
 
         # a 실행 중복 방지용
         self.random_starting = False
+
+        # s 기능에서 함께 제어할 보조 ROS2 프로세스
+        self.web_video_server_process = None
+        self.rosbridge_server_process = None
 
         for key, (topic, name) in self.topic_map.items():
             self.topic_publishers[key] = self.create_publisher(Bool, topic, 10)
@@ -221,8 +228,70 @@ class StatusTopicController(Node):
     def start_random_with_battery_voltage_publish(self):
         # s 입력 시 a 기능(1~6 랜덤 발행 + 내부 온도값 발행)과
         # 배터리 전압값 발행을 동시에 시작합니다.
+        self.start_aux_ros_services()
         self.start_battery_voltage_publish()
         self.start_random_publish()
+
+    def _start_process_if_needed(self, process_attr_name, command, display_name):
+        current_process = getattr(self, process_attr_name)
+        if current_process is not None and current_process.poll() is None:
+            print(f"[INFO] {display_name} 이미 실행 중입니다.")
+            return
+
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+            setattr(self, process_attr_name, process)
+            print(f"[START] {display_name} 실행 (pid={process.pid})")
+        except Exception as exc:
+            print(f"[ERROR] {display_name} 실행 실패: {exc}")
+
+    def _stop_process_if_running(self, process_attr_name, display_name):
+        process = getattr(self, process_attr_name)
+        if process is None:
+            return
+
+        if process.poll() is not None:
+            setattr(self, process_attr_name, None)
+            return
+
+        try:
+            os.killpg(process.pid, signal.SIGINT)
+            process.wait(timeout=3.0)
+            print(f"[STOP] {display_name} 종료")
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=2.0)
+            print(f"[STOP] {display_name} 강제 종료")
+        except Exception as exc:
+            print(f"[WARN] {display_name} 종료 중 오류: {exc}")
+        finally:
+            setattr(self, process_attr_name, None)
+
+    def start_aux_ros_services(self):
+        # UI 스트리밍/웹소켓 연결용 보조 서비스 실행
+        self._start_process_if_needed(
+            'web_video_server_process',
+            ['ros2', 'run', 'web_video_server', 'web_video_server'],
+            'web_video_server'
+        )
+        self._start_process_if_needed(
+            'rosbridge_server_process',
+            ['ros2', 'run', 'rosbridge_server', 'rosbridge_websocket'],
+            'rosbridge_websocket'
+        )
+
+    def stop_aux_ros_services(self):
+        self._stop_process_if_running('web_video_server_process', 'web_video_server')
+        self._stop_process_if_running('rosbridge_server_process', 'rosbridge_websocket')
 
     def toggle_random_with_battery_voltage_publish(self):
         # s 입력 시 하나라도 동작 중이면 전체 중지,
@@ -249,6 +318,7 @@ class StatusTopicController(Node):
 
         self.stop_temperature_value_publish()
         self.stop_battery_voltage_publish()
+        self.stop_aux_ros_services()
         self.random_starting = False
 
     def start_random_publish(self):
@@ -311,6 +381,7 @@ def input_thread(node):
         user_input = input("\n번호 입력: ").strip().lower()
 
         if user_input == 'q':
+            node.stop_all_publish()
             rclpy.shutdown()
             break
 
@@ -342,6 +413,8 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+
+    node.stop_all_publish()
 
     node.destroy_node()
 
