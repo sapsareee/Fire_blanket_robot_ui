@@ -24,6 +24,8 @@ const CHECK_INTERVAL_MS = 1000;
 const MAX_RECONNECT_ATTEMPTS = 10; // 최대 재연결 시도 횟수
 const DEFAULT_SAMPLE_INTERVAL_MS = 1000;
 const BATTERY_VOLTAGE_TOPIC = "/battery_voltage";
+const THERMAL_TREND_TOPIC = "/thermal/temperature_trend";
+const THERMAL_MAX_TOPIC = "/thermal/max_temperature";
 const SAMPLE_INTERVAL_OPTIONS = [500, 1000, 2000];
 const TREND_WINDOW_OPTIONS = [16, 32, 64, 120];
 const DEFAULT_TREND_WINDOW = 32;
@@ -73,7 +75,8 @@ const createInitialSeries = (count, baseValue, variance, min, max, intervalMs) =
 const TOPIC_CONFIG = [
   { key: "autonomy", name: "자율주행", topic: "/autonomy/status" },
   { key: "thermal_camera", name: "열화상", topic: "/thermal_camera/status" },
-  { key: "thermal_max_temp", name: "열화상 최대 온도", topic: "/thermal/max_temperature" },
+  { key: "thermal_avg_temp", name: "열화상 온도 추세", topic: THERMAL_TREND_TOPIC },
+  { key: "thermal_max_temp", name: "열화상 최고 온도", topic: THERMAL_MAX_TOPIC },
   { key: "vision_sensor", name: "RGB 카메라", topic: "/vision_sensor/status" },
   { key: "battery_sensor", name: "배터리 상태", topic: "/battery_sensor/status" },
   { key: "motor", name: "모터 상태", topic: "/motor/status" },
@@ -101,6 +104,7 @@ export default function FireRobotDashboard() {
   const [rvizImageOk, setRvizImageOk] = useState(false);
   const [topicStates, setTopicStates] = useState(createInitialTopicState());
   const [thermalImageSize, setThermalImageSize] = useState({ width: 0, height: 0 });
+  const [temperatureTrend, setTemperatureTrend] = useState(null);
   const [maxTemperature, setMaxTemperature] = useState(null);
   const [batteryVoltage, setBatteryVoltage] = useState(null);
   const [internalTemperature, setInternalTemperature] = useState(null);
@@ -111,6 +115,8 @@ export default function FireRobotDashboard() {
   const rosInstanceRef = useRef(null);
   const internalTempLastSeenRef = useRef(0);
   const batteryVoltageLastSeenRef = useRef(0);
+  const thermalTrendLastSeenRef = useRef(0);
+  const thermalMaxLastSeenRef = useRef(0);
   const [sampleIntervalMs, setSampleIntervalMs] = useState(DEFAULT_SAMPLE_INTERVAL_MS);
   const [trendWindowPoints, setTrendWindowPoints] = useState(DEFAULT_TREND_WINDOW);
   const [batterySeries, setBatterySeries] = useState([]);
@@ -229,6 +235,10 @@ export default function FireRobotDashboard() {
         if (isUnmounted) return;
         setRosConnected(false);
         console.warn("[ROS] rosbridge connection closed");
+        setTemperatureTrend(null);
+        setMaxTemperature(null);
+        thermalTrendLastSeenRef.current = 0;
+        thermalMaxLastSeenRef.current = 0;
 
         // rosbridge 연결이 끊긴 경우 전체를 timeout/disconnect 취급
         setTopicStates((prev) => {
@@ -246,8 +256,7 @@ export default function FireRobotDashboard() {
       });
 
       TOPIC_CONFIG.forEach((cfg) => {
-        // thermal_max_temp는 Float32 메시지 사용
-        if (cfg.key === 'thermal_max_temp') {
+        if (cfg.key === "thermal_avg_temp" || cfg.key === "thermal_max_temp") {
           const topic = new ROSLIB.Topic({
             ros,
             name: cfg.topic,
@@ -256,13 +265,24 @@ export default function FireRobotDashboard() {
 
           topic.subscribe((message) => {
             if (isUnmounted) return;
-            setMaxTemperature(message.data);
-            // 최대 온도 토픽도 상태 업데이트
+
+            const numericValue = Number(message.data);
+            if (!Number.isFinite(numericValue)) return;
+
+            const now = Date.now();
+            if (cfg.key === "thermal_avg_temp") {
+              thermalTrendLastSeenRef.current = now;
+              setTemperatureTrend(numericValue);
+            } else {
+              thermalMaxLastSeenRef.current = now;
+              setMaxTemperature(numericValue);
+            }
+
             setTopicStates((prev) => ({
               ...prev,
               [cfg.key]: {
-                value: message.data,
-                lastSeen: Date.now(),
+                value: numericValue,
+                lastSeen: now,
                 timedOut: false,
               },
             }));
@@ -385,6 +405,32 @@ export default function FireRobotDashboard() {
           console.log("[ROS] Battery voltage timeout detected");
           setBatteryVoltage(null);
           batteryVoltageLastSeenRef.current = 0;
+        }
+
+        if (thermalTrendLastSeenRef.current > 0 && now - thermalTrendLastSeenRef.current > TIMEOUT_MS) {
+          console.log("[ROS] Thermal temperature trend timeout detected");
+          setTemperatureTrend(null);
+          thermalTrendLastSeenRef.current = 0;
+          setTopicStates((prev) => ({
+            ...prev,
+            thermal_avg_temp: {
+              ...prev.thermal_avg_temp,
+              timedOut: true,
+            },
+          }));
+        }
+
+        if (thermalMaxLastSeenRef.current > 0 && now - thermalMaxLastSeenRef.current > TIMEOUT_MS) {
+          console.log("[ROS] Thermal max temperature timeout detected");
+          setMaxTemperature(null);
+          thermalMaxLastSeenRef.current = 0;
+          setTopicStates((prev) => ({
+            ...prev,
+            thermal_max_temp: {
+              ...prev.thermal_max_temp,
+              timedOut: true,
+            },
+          }));
         }
 
         // Check internal temperature timeout
@@ -510,7 +556,7 @@ export default function FireRobotDashboard() {
   };
 
   const connectionItems = useMemo(() => {
-    return TOPIC_CONFIG.filter(cfg => cfg.key !== 'thermal_max_temp').map((cfg) => {
+    return TOPIC_CONFIG.filter((cfg) => !["thermal_avg_temp", "thermal_max_temp"].includes(cfg.key)).map((cfg) => {
       const state = topicStates[cfg.key];
       const isAlive = state && !state.timedOut && state.value === true;
 
@@ -661,17 +707,21 @@ export default function FireRobotDashboard() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium text-emerald-300">
-                      15 FPS
+                    <span className={`rounded-full border px-3 py-1 text-[11px] font-medium ${
+                      topicStates.thermal_camera && !topicStates.thermal_camera.timedOut && topicStates.thermal_camera.value
+                        ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
+                        : "border-rose-400/30 bg-rose-500/10 text-rose-300"
+                    }`}>
+                      {topicStates.thermal_camera && !topicStates.thermal_camera.timedOut && topicStates.thermal_camera.value ? "15 FPS" : "0 FPS"}
                     </span>
                     <span
                       className={`rounded-full px-3 py-1 text-xs ${
-                        thermalImageOk
+                        topicStates.thermal_camera && !topicStates.thermal_camera.timedOut && topicStates.thermal_camera.value
                           ? "border border-emerald-400/30 bg-emerald-500/15 text-emerald-300"
                           : "border border-rose-400/30 bg-rose-500/15 text-rose-300"
                       }`}
                     >
-                      {thermalImageOk ? "LIVE" : "DISCONNECTED"}
+                      {topicStates.thermal_camera && !topicStates.thermal_camera.timedOut && topicStates.thermal_camera.value ? "LIVE" : "DISCONNECTED"}
                     </span>
 
                     <button
@@ -707,24 +757,20 @@ export default function FireRobotDashboard() {
                   />
 
                   <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
-                  <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-slate-100 backdrop-blur-sm">
-                    0.0  2.0  4.0  6.0
-                  </div>
-                  <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-orange-300 backdrop-blur-sm">
-                    364°C
-                  </div>
                 </div>
 
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   <div className={miniStatClass}>
                     <div className="text-[11px] text-slate-400">최고 온도</div>
                     <div className="mt-1 text-lg font-semibold text-rose-300">
-                      {maxTemperature !== null ? `${maxTemperature.toFixed(1)}°C` : "34.4°C"}
+                      {maxTemperature !== null ? `${maxTemperature.toFixed(1)}°C` : "대기중"}
                     </div>
                   </div>
                   <div className={miniStatClass}>
-                    <div className="text-[11px] text-slate-400">평균 온도</div>
-                    <div className="mt-1 text-lg font-semibold text-amber-300">30.0°C</div>
+                    <div className="text-[11px] text-slate-400">온도 추세</div>
+                      <div className="mt-1 text-lg font-semibold text-amber-300">
+                        {temperatureTrend !== null ? `${temperatureTrend.toFixed(2)}°C/s` : "대기중"}
+                      </div>
                   </div>
                   <div className={miniStatClass}>
                     <div className="text-[11px] text-slate-400">최저 온도</div>
@@ -748,12 +794,12 @@ export default function FireRobotDashboard() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wide ${
-                        rvizImageOk
+                        topicStates.autonomy && !topicStates.autonomy.timedOut && topicStates.autonomy.value
                           ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300"
                           : "border-rose-400/30 bg-rose-500/15 text-rose-300"
                       }`}
                     >
-                      {rvizImageOk ? "RViz LIVE" : "RViz DISCONNECTED"}
+                      {topicStates.autonomy && !topicStates.autonomy.timedOut && topicStates.autonomy.value ? "RViz LIVE" : "RViz DISCONNECTED"}
                     </span>
                     <button
                       onClick={() => {
@@ -783,9 +829,6 @@ export default function FireRobotDashboard() {
                     />
 
                     <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
-                    <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-slate-100 backdrop-blur-sm">
-                      CAM FRONT
-                    </div>
                     <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
                       REC
                     </div>
@@ -807,17 +850,21 @@ export default function FireRobotDashboard() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-[11px] font-medium text-cyan-300">
-                      정상 - 30 FPS
+                    <span className={`rounded-full border px-3 py-1 text-[11px] font-medium ${
+                      topicStates.vision_sensor && !topicStates.vision_sensor.timedOut && topicStates.vision_sensor.value
+                        ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-300"
+                        : "border-rose-400/30 bg-rose-500/10 text-rose-300"
+                    }`}>
+                      {topicStates.vision_sensor && !topicStates.vision_sensor.timedOut && topicStates.vision_sensor.value ? "정상 - 30 FPS" : "0 FPS"}
                     </span>
                     <span
                       className={`rounded-full px-3 py-1 text-xs ${
-                        rgbImageOk
+                        topicStates.vision_sensor && !topicStates.vision_sensor.timedOut && topicStates.vision_sensor.value
                           ? "border border-emerald-400/30 bg-emerald-500/15 text-emerald-300"
                           : "border border-rose-400/30 bg-rose-500/15 text-rose-300"
                       }`}
                     >
-                      {rgbImageOk ? "LIVE" : "DISCONNECTED"}
+                      {topicStates.vision_sensor && !topicStates.vision_sensor.timedOut && topicStates.vision_sensor.value ? "LIVE" : "DISCONNECTED"}
                     </span>
 
                     <button
@@ -847,9 +894,6 @@ export default function FireRobotDashboard() {
                   />
 
                   <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
-                  <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-slate-100 backdrop-blur-sm">
-                    CAM FRONT · 5:45:02
-                  </div>
                   <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
                     REC
                   </div>
