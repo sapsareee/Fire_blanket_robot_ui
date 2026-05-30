@@ -106,6 +106,7 @@ export default function FireRobotDashboard() {
   const [thermalImageSize, setThermalImageSize] = useState({ width: 0, height: 0 });
   const [temperatureTrend, setTemperatureTrend] = useState(null);
   const [maxTemperature, setMaxTemperature] = useState(null);
+  const [fireDetected, setFireDetected] = useState(false);
   const [batteryVoltage, setBatteryVoltage] = useState(null);
   const [internalTemperature, setInternalTemperature] = useState(null);
 
@@ -117,6 +118,7 @@ export default function FireRobotDashboard() {
   const batteryVoltageLastSeenRef = useRef(0);
   const thermalTrendLastSeenRef = useRef(0);
   const thermalMaxLastSeenRef = useRef(0);
+  const fireDetectedLastSeenRef = useRef(0);
   const [sampleIntervalMs, setSampleIntervalMs] = useState(DEFAULT_SAMPLE_INTERVAL_MS);
   const [trendWindowPoints, setTrendWindowPoints] = useState(DEFAULT_TREND_WINDOW);
   const [batterySeries, setBatterySeries] = useState([]);
@@ -237,8 +239,10 @@ export default function FireRobotDashboard() {
         console.warn("[ROS] rosbridge connection closed");
         setTemperatureTrend(null);
         setMaxTemperature(null);
+        setFireDetected(false);
         thermalTrendLastSeenRef.current = 0;
         thermalMaxLastSeenRef.current = 0;
+        fireDetectedLastSeenRef.current = 0;
 
         // rosbridge 연결이 끊긴 경우 전체를 timeout/disconnect 취급
         setTopicStates((prev) => {
@@ -350,6 +354,27 @@ export default function FireRobotDashboard() {
 
       subscribers.push(batteryVoltageTopic);
 
+      // Fire detected subscriber
+      const fireDetectedTopic = new ROSLIB.Topic({
+        ros,
+        name: "/thermal/fire_detected",
+        messageType: "std_msgs/msg/Bool",
+      });
+
+      fireDetectedTopic.subscribe((message) => {
+        if (isUnmounted) return;
+
+        const fireState = Boolean(message.data);
+        const now = Date.now();
+        fireDetectedLastSeenRef.current = now;
+
+        console.log("[ROS] Fire detected state received:", fireState);
+
+        setFireDetected(fireState);
+      });
+
+      subscribers.push(fireDetectedTopic);
+
       // Internal temperature subscriber
       const internalTempTopic = new ROSLIB.Topic({
         ros,
@@ -431,6 +456,12 @@ export default function FireRobotDashboard() {
               timedOut: true,
             },
           }));
+        }
+
+        if (fireDetectedLastSeenRef.current > 0 && now - fireDetectedLastSeenRef.current > TIMEOUT_MS) {
+          console.log("[ROS] Fire detected timeout detected");
+          setFireDetected(false);
+          fireDetectedLastSeenRef.current = 0;
         }
 
         // Check internal temperature timeout
@@ -773,8 +804,14 @@ export default function FireRobotDashboard() {
                       </div>
                   </div>
                   <div className={miniStatClass}>
-                    <div className="text-[11px] text-slate-400">최저 온도</div>
-                    <div className="mt-1 text-lg font-semibold text-sky-300">24.4°C</div>
+                    <div className="text-[11px] text-slate-400">화재 감지</div>
+                    <div className={`mt-1 text-lg font-semibold ${
+                      fireDetected 
+                        ? "text-rose-300" 
+                        : "text-emerald-300"
+                    }`}>
+                      {fireDetected ? "🔥 ON" : "✓ OFF"}
+                    </div>
                   </div>
                 </div>
               </section>
