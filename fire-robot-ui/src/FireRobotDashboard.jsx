@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import * as ROSLIB from "roslib";
 import autonomyIcon from "./assets/icons/icon-autonomy.svg";
 import thermalIcon from "./assets/icons/icon-thermal.svg";
@@ -31,6 +31,9 @@ const TREND_WINDOW_OPTIONS = [16, 32, 64, 120];
 const DEFAULT_TREND_WINDOW = 32;
 const MAX_HISTORY_POINTS = 240;
 const INITIAL_HISTORY_POINTS = 64;
+const MAX_EVENT_LOGS = 200;
+const FIRE_RISK_TEMP_THRESHOLD_C = 80;
+const STREAM_RETRY_INTERVAL_MS = 3000;
 
 const BATTERY_MIN_V = 10.5;
 const BATTERY_MAX_V = 11.5;
@@ -109,6 +112,7 @@ export default function FireRobotDashboard() {
   const [fireDetected, setFireDetected] = useState(false);
   const [batteryVoltage, setBatteryVoltage] = useState(null);
   const [internalTemperature, setInternalTemperature] = useState(null);
+  const [eventLogs, setEventLogs] = useState([]);
 
   // 재연결 로직용 ref
   const reconnectAttemptRef = useRef(0);
@@ -119,6 +123,10 @@ export default function FireRobotDashboard() {
   const thermalTrendLastSeenRef = useRef(0);
   const thermalMaxLastSeenRef = useRef(0);
   const fireDetectedLastSeenRef = useRef(0);
+  const prevConnectionAliveRef = useRef(null);
+  const prevFireDetectedRef = useRef(null);
+  const prevHighTempStateRef = useRef(null);
+  const prevRosConnectedRef = useRef(null);
   const [sampleIntervalMs, setSampleIntervalMs] = useState(DEFAULT_SAMPLE_INTERVAL_MS);
   const [trendWindowPoints, setTrendWindowPoints] = useState(DEFAULT_TREND_WINDOW);
   const [batterySeries, setBatterySeries] = useState([]);
@@ -136,14 +144,48 @@ export default function FireRobotDashboard() {
     }
   }, []);
 
-  const logs = [
-    { time: "14:21:08", level: "INFO", text: "자율주행 경로 추종 정상 동작" },
-    { time: "14:21:15", level: "INFO", text: "비전 카메라 스트림 수신 시작" },
-    { time: "14:21:32", level: "WARN", text: "배터리 센서 응답 지연 감지" },
-    { time: "14:21:49", level: "INFO", text: "열화상 카메라 연결 상태 정상" },
-    { time: "14:22:11", level: "ALERT", text: "온도 상승 트리거 발생: 전면 차폐판 82°C" },
-    { time: "14:22:16", level: "INFO", text: "이벤트 로그 저장 완료" },
-  ];
+  useEffect(() => {
+    if (thermalImageOk) return undefined;
+
+    const timer = setInterval(() => {
+      setThermalReloadKey((v) => v + 1);
+    }, STREAM_RETRY_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, [thermalImageOk]);
+
+  useEffect(() => {
+    if (rvizImageOk) return undefined;
+
+    const timer = setInterval(() => {
+      setRvizReloadKey((v) => v + 1);
+    }, STREAM_RETRY_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, [rvizImageOk]);
+
+  useEffect(() => {
+    if (rgbImageOk) return undefined;
+
+    const timer = setInterval(() => {
+      setRgbReloadKey((v) => v + 1);
+    }, STREAM_RETRY_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, [rgbImageOk]);
+
+  const appendEventLog = useCallback((level, text) => {
+    const now = Date.now();
+    const nextLog = {
+      id: `${now}-${Math.random().toString(16).slice(2, 8)}`,
+      time: formatTimeLabel(now),
+      level,
+      text,
+      timestamp: now,
+    };
+
+    setEventLogs((prev) => [nextLog, ...prev].slice(0, MAX_EVENT_LOGS));
+  }, []);
 
   // ROS2 web_video_server 사용 예시
   // 예: ros2 run web_video_server web_video_server
@@ -576,6 +618,101 @@ export default function FireRobotDashboard() {
   }, []);
 
   // Temperature data is now received from /robot/internal_temperature topic
+
+  useEffect(() => {
+    const trackedConfigs = TOPIC_CONFIG.filter(
+      (cfg) => !["thermal_avg_temp", "thermal_max_temp"].includes(cfg.key)
+    );
+
+    const currentAliveMap = trackedConfigs.reduce((acc, cfg) => {
+      const state = topicStates[cfg.key];
+      acc[cfg.key] = Boolean(state && !state.timedOut && state.value === true);
+      return acc;
+    }, {});
+
+    if (!prevConnectionAliveRef.current) {
+      prevConnectionAliveRef.current = currentAliveMap;
+      return;
+    }
+
+    trackedConfigs.forEach((cfg) => {
+      const prevAlive = prevConnectionAliveRef.current[cfg.key];
+      const currAlive = currentAliveMap[cfg.key];
+
+      if (prevAlive !== currAlive) {
+        if (currAlive) {
+          appendEventLog("INFO", `${cfg.name} 모듈 연결됨`);
+        } else {
+          appendEventLog("WARN", `${cfg.name} 모듈 연결 끊김`);
+        }
+      }
+    });
+
+    prevConnectionAliveRef.current = currentAliveMap;
+  }, [topicStates, appendEventLog]);
+
+  useEffect(() => {
+    if (prevFireDetectedRef.current === null) {
+      prevFireDetectedRef.current = fireDetected;
+      return;
+    }
+
+    if (prevFireDetectedRef.current !== fireDetected) {
+      if (fireDetected) {
+        appendEventLog("ALERT", "화재 발생 가능성 감지됨 (/thermal/fire_detected=true)");
+      } else {
+        appendEventLog("INFO", "화재 감지 상태 해제됨");
+      }
+    }
+
+    prevFireDetectedRef.current = fireDetected;
+  }, [fireDetected, appendEventLog]);
+
+  useEffect(() => {
+    if (maxTemperature === null) {
+      return;
+    }
+
+    const isHighTemp = maxTemperature >= FIRE_RISK_TEMP_THRESHOLD_C;
+
+    if (prevHighTempStateRef.current === null) {
+      prevHighTempStateRef.current = isHighTemp;
+      return;
+    }
+
+    if (prevHighTempStateRef.current !== isHighTemp) {
+      if (isHighTemp) {
+        appendEventLog(
+          "WARN",
+          `고온 경고: 최고 온도 ${maxTemperature.toFixed(1)}°C (임계치 ${FIRE_RISK_TEMP_THRESHOLD_C}°C)`
+        );
+      } else {
+        appendEventLog(
+          "INFO",
+          `고온 상태 해제: 최고 온도 ${maxTemperature.toFixed(1)}°C`
+        );
+      }
+    }
+
+    prevHighTempStateRef.current = isHighTemp;
+  }, [maxTemperature, appendEventLog]);
+
+  useEffect(() => {
+    if (prevRosConnectedRef.current === null) {
+      prevRosConnectedRef.current = rosConnected;
+      return;
+    }
+
+    if (prevRosConnectedRef.current !== rosConnected) {
+      if (rosConnected) {
+        appendEventLog("INFO", "ROS Bridge 연결됨");
+      } else {
+        appendEventLog("WARN", "ROS Bridge 연결 끊김");
+      }
+    }
+
+    prevRosConnectedRef.current = rosConnected;
+  }, [rosConnected, appendEventLog]);
 
   const iconMap = {
     autonomy: autonomyIcon,
@@ -1118,13 +1255,18 @@ export default function FireRobotDashboard() {
                         </p>
                       </div>
                       <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-                        {logs.length} events
+                        {eventLogs.length} events
                       </span>
                     </div>
                     <div className={`h-52 overflow-auto ${glassInsetClass} p-3 space-y-3`}>
-                      {logs.map((log, idx) => (
+                      {eventLogs.length === 0 && (
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
+                          이벤트 대기 중입니다. 센서 연결 변화, 화재 감지, 온도 경고가 발생하면 여기에 표시됩니다.
+                        </div>
+                      )}
+                      {eventLogs.map((log) => (
                         <div
-                          key={idx}
+                          key={log.id}
                           className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"
                         >
                           <div className="mb-2 flex items-center justify-between gap-3">
@@ -1157,9 +1299,14 @@ export default function FireRobotDashboard() {
                   </div>
                 </div>
                 <div className="space-y-3">
-                  {logs.map((log, idx) => (
+                  {eventLogs.length === 0 && (
+                    <div className={`${glassInsetClass} p-4 text-sm text-slate-300`}>
+                      아직 기록된 이벤트가 없습니다.
+                    </div>
+                  )}
+                  {eventLogs.map((log) => (
                     <div
-                      key={idx}
+                      key={log.id}
                       className={`${glassInsetClass} p-4`}
                     >
                       <div className="mb-2 flex items-center justify-between gap-3">
