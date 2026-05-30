@@ -21,7 +21,7 @@ const VIDEO_PORT = import.meta.env.VITE_VIDEO_PORT || "8080";
 const ROSBRIDGE_URL = `${WS_PROTOCOL}://${ROS_HOST}:${ROSBRIDGE_PORT}`;
 const TIMEOUT_MS = 4000;
 const CHECK_INTERVAL_MS = 1000;
-const MAX_RECONNECT_ATTEMPTS = 10; // 최대 재연결 시도 횟수
+const MAX_RECONNECT_ATTEMPTS = 10; // 표시용 최대 재연결 시도 횟수
 const DEFAULT_SAMPLE_INTERVAL_MS = 1000;
 const BATTERY_VOLTAGE_TOPIC = "/battery_voltage";
 const THERMAL_TREND_TOPIC = "/thermal/temperature_trend";
@@ -203,13 +203,7 @@ export default function FireRobotDashboard() {
     let timeoutChecker = null;
 
     const scheduleReconnect = () => {
-      if (
-        isUnmounted ||
-        reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS
-      ) {
-        console.error(
-          `[ROS] Max reconnection attempts reached (${MAX_RECONNECT_ATTEMPTS})`
-        );
+      if (isUnmounted) {
         return;
       }
 
@@ -223,6 +217,12 @@ export default function FireRobotDashboard() {
       console.log(
         `[ROS] Scheduling reconnection in ${delay}ms (attempt ${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS})`
       );
+
+      // 일정 시간 뒤 다시 시작해도 계속 복구될 수 있도록
+      // 시도 횟수는 유지하되 재연결 자체는 중단하지 않습니다.
+      if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttemptRef.current = MAX_RECONNECT_ATTEMPTS;
+      }
 
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -856,7 +856,7 @@ export default function FireRobotDashboard() {
           </div>
         </div>
  
-        <div className="grid min-h-[90vh] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid min-h-[90vh] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px_320px]">
           <main className="min-w-0 p-4 md:p-6 lg:p-7">
             {activeTab === "home" && (
               <>
@@ -1244,48 +1244,6 @@ export default function FireRobotDashboard() {
                     </svg>
                   </section>
 
-                  <section className={`${glassPanelClass} p-4 md:p-5`}>
-                    <div className="mb-4 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-base md:text-lg font-semibold">
-                          트리거 로그
-                        </h3>
-                        <p className="text-sm text-slate-400">
-                          특정 이벤트 및 경고 이력
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-                        {eventLogs.length} events
-                      </span>
-                    </div>
-                    <div className={`h-52 overflow-auto ${glassInsetClass} p-3 space-y-3`}>
-                      {eventLogs.length === 0 && (
-                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
-                          이벤트 대기 중입니다. 센서 연결 변화, 화재 감지, 온도 경고가 발생하면 여기에 표시됩니다.
-                        </div>
-                      )}
-                      {eventLogs.map((log) => (
-                        <div
-                          key={log.id}
-                          className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"
-                        >
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <span
-                              className={`rounded-full border px-2 py-1 text-[11px] font-medium ${levelStyle(
-                                log.level
-                              )}`}
-                            >
-                              {log.level}
-                            </span>
-                            <span className="text-xs text-slate-400">{log.time}</span>
-                          </div>
-                          <p className="text-sm text-slate-200 leading-relaxed">
-                            {log.text}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
                 </div>
               </>
             )}
@@ -1433,6 +1391,45 @@ export default function FireRobotDashboard() {
                   >
                     {item.status}
                   </span>
+                </div>
+              ))}
+            </div>
+          </aside>
+
+          <aside className="border-t xl:border-t-0 xl:border-l border-white/10 bg-white/[0.03] backdrop-blur-xl p-4 md:p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">트리거 로그</h2>
+              </div>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                {eventLogs.length} events
+              </span>
+            </div>
+
+            <div className={`mb-5 ${glassInsetClass} p-4 space-y-3 max-h-[calc(100vh-220px)] overflow-auto`}>
+              {eventLogs.length === 0 && (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
+                  이벤트 대기 중입니다. 센서 연결 변화, 화재 감지, 온도 경고가 발생하면 여기에 표시됩니다.
+                </div>
+              )}
+              {eventLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <span
+                      className={`rounded-full border px-2 py-1 text-[11px] font-medium ${levelStyle(
+                        log.level
+                      )}`}
+                    >
+                      {log.level}
+                    </span>
+                    <span className="text-xs text-slate-400">{log.time}</span>
+                  </div>
+                  <p className="text-sm text-slate-200 leading-relaxed">
+                    {log.text}
+                  </p>
                 </div>
               ))}
             </div>
