@@ -7,6 +7,8 @@ import batteryIcon from "./assets/icons/icon-battery.svg";
 import motorIcon from "./assets/icons/icon-motor.svg";
 import temperatureIcon from "./assets/icons/icon-temperature.svg";
 import rosIcon from "./assets/icons/icon-ros.svg";
+import nav2Video from "./assets/videos/nav_canva.mp4";
+import rgbViewVideo from "./assets/videos/rgb_canva.mp4";
 
 const PAGE_IS_HTTPS = window.location.protocol === "https:";
 const WS_PROTOCOL = PAGE_IS_HTTPS ? "wss" : "ws";
@@ -154,26 +156,6 @@ export default function FireRobotDashboard() {
     return () => clearInterval(timer);
   }, [thermalImageOk]);
 
-  useEffect(() => {
-    if (rvizImageOk) return undefined;
-
-    const timer = setInterval(() => {
-      setRvizReloadKey((v) => v + 1);
-    }, STREAM_RETRY_INTERVAL_MS);
-
-    return () => clearInterval(timer);
-  }, [rvizImageOk]);
-
-  useEffect(() => {
-    if (rgbImageOk) return undefined;
-
-    const timer = setInterval(() => {
-      setRgbReloadKey((v) => v + 1);
-    }, STREAM_RETRY_INTERVAL_MS);
-
-    return () => clearInterval(timer);
-  }, [rgbImageOk]);
-
   const appendEventLog = useCallback((level, text) => {
     const now = Date.now();
     const nextLog = {
@@ -194,8 +176,6 @@ export default function FireRobotDashboard() {
     `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/thermal/image&qos_profile=sensor_data`;
   const rgbStreamUrl =
     `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/rgb/image_raw&qos_profile=sensor_data`;
-  const rvizStreamUrl =
-    `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/rviz/image&qos_profile=sensor_data`;
 
   useEffect(() => {
     let isUnmounted = false;
@@ -741,6 +721,25 @@ export default function FireRobotDashboard() {
     return state && !state.timedOut && state.value === true;
   }, [topicStates]);
 
+  const autonomyTopicAlive = useMemo(() => {
+    const state = topicStates.autonomy;
+    return Boolean(state && !state.timedOut && state.value === true);
+  }, [topicStates]);
+
+  const rgbTopicAlive = useMemo(() => {
+    const state = topicStates.vision_sensor;
+    return Boolean(state && !state.timedOut && state.value === true);
+  }, [topicStates]);
+
+  // web_video_server 접근 가능 + ROS 연결 상태일 때를 video server 연결로 판단
+  const videoServerConnected = useMemo(
+    () => rosConnected && thermalImageOk,
+    [rosConnected, thermalImageOk]
+  );
+
+  const shouldPlayAutonomyVideo = videoServerConnected && autonomyTopicAlive;
+  const shouldPlayRgbVideo = videoServerConnected && rgbTopicAlive;
+
   const batteryViewSeries = useMemo(
     () => batterySeries.slice(-trendWindowPoints),
     [batterySeries, trendWindowPoints]
@@ -905,24 +904,30 @@ export default function FireRobotDashboard() {
                 </div>
 
                 <div className={`relative mt-1 aspect-square w-full overflow-hidden bg-black/40 ${glassInsetClass}`}>
-                  <img
-                    key={thermalReloadKey}
-                    src={`${thermalStreamUrl}&reload=${thermalReloadKey}`}
-                    alt="ROS2 thermal stream"
-                    className="h-full w-full object-contain"
-                    onLoad={(e) => {
-                      const img = e.target;
-                      setThermalImageSize({
-                        width: img.naturalWidth,
-                        height: img.naturalHeight
-                      });
-                      setThermalImageOk(true);
-                    }}
-                    onError={() => {
-                      setThermalImageSize({ width: 0, height: 0 });
-                      setThermalImageOk(false);
-                    }}
-                  />
+                  {thermalTopicAlive && rosConnected ? (
+                    <img
+                      key={thermalReloadKey}
+                      src={`${thermalStreamUrl}&reload=${thermalReloadKey}`}
+                      alt="ROS2 thermal stream"
+                      className="h-full w-full object-contain"
+                      onLoad={(e) => {
+                        const img = e.target;
+                        setThermalImageSize({
+                          width: img.naturalWidth,
+                          height: img.naturalHeight,
+                        });
+                        setThermalImageOk(true);
+                      }}
+                      onError={() => {
+                        setThermalImageSize({ width: 0, height: 0 });
+                        setThermalImageOk(false);
+                      }}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-slate-300">
+                      ROS Video Server 및 열화상 토픽 연결 대기 중
+                    </div>
+                  )}
 
                   <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
                 </div>
@@ -977,7 +982,6 @@ export default function FireRobotDashboard() {
                     </span>
                     <button
                       onClick={() => {
-                        setRvizImageOk(false);
                         setRvizReloadKey((v) => v + 1);
                       }}
                       className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:bg-white/10"
@@ -989,18 +993,21 @@ export default function FireRobotDashboard() {
 
                 <div className="grid grid-cols-1 gap-3">
                   <div className={`relative aspect-square w-full overflow-hidden ${glassInsetClass}`}>
-                    <img
-                      key={rvizReloadKey}
-                      src={`${rvizStreamUrl}&reload=${rvizReloadKey}`}
-                      alt="RViz live stream"
-                      className="h-full w-full object-cover"
-                      onLoad={() => {
-                        setRvizImageOk(true);
-                      }}
-                      onError={() => {
-                        setRvizImageOk(false);
-                      }}
-                    />
+                    {shouldPlayAutonomyVideo ? (
+                      <video
+                        key={rvizReloadKey}
+                        src={nav2Video}
+                        className="h-full w-full object-cover"
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-slate-300">
+                        ROS Video Server 및 자율주행 토픽 연결 대기 중
+                      </div>
+                    )}
 
                     <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
                     <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
@@ -1043,7 +1050,6 @@ export default function FireRobotDashboard() {
 
                     <button
                       onClick={() => {
-                        setRgbImageOk(false);
                         setRgbReloadKey((v) => v + 1);
                       }}
                       className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:bg-white/10"
@@ -1054,18 +1060,21 @@ export default function FireRobotDashboard() {
                 </div>
 
                 <div className={`relative aspect-square w-full overflow-hidden ${glassInsetClass}`}>
-                  <img
-                    key={rgbReloadKey}
-                    src={`${rgbStreamUrl}&reload=${rgbReloadKey}`}
-                    alt="RGB camera stream"
-                    className="h-full w-full object-cover"
-                    onLoad={() => {
-                      setRgbImageOk(true);
-                    }}
-                    onError={() => {
-                      setRgbImageOk(false);
-                    }}
-                  />
+                  {shouldPlayRgbVideo ? (
+                    <video
+                      key={rgbReloadKey}
+                      src={rgbViewVideo}
+                      className="h-full w-full object-cover"
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-slate-300">
+                      ROS Video Server 및 RGB 카메라 토픽 연결 대기 중
+                    </div>
+                  )}
 
                   <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
                   <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
