@@ -84,8 +84,8 @@ export default function FireRobotDashboard() {
             <StreamCard {...streams.rgb} />
           </section>
 
-          <section className="grid grid-cols-1 gap-2.5 lg:grid-cols-3">
-            <div className="grid min-w-0 gap-2.5 sm:grid-cols-[170px_minmax(0,1fr)] lg:col-span-2">
+          <section className="grid grid-cols-1 items-start gap-2.5 lg:grid-cols-3">
+            <div className="grid min-w-0 items-start gap-2.5 sm:grid-cols-[237px_minmax(0,1fr)] lg:col-span-2">
               <SensorChart
                 title="Battery"
                 label="Battery Status"
@@ -102,6 +102,7 @@ export default function FireRobotDashboard() {
                 series={sensors.batteryViewSeries}
                 min={sensors.batteryRange.min}
                 max={sensors.batteryRange.max}
+                square
               />
               <SensorChart
                 title="Temperature"
@@ -127,6 +128,7 @@ export default function FireRobotDashboard() {
                 min={sensors.temperatureRange.min}
                 max={sensors.temperatureRange.max}
                 wide
+                roundedGauge
                 controls={trendControls}
               />
             </div>
@@ -190,6 +192,7 @@ export default function FireRobotDashboard() {
               min={sensors.temperatureRange.min}
               max={sensors.temperatureRange.max}
               wide
+              roundedGauge
             />
           </section>
           <ConnectionPanel

@@ -2,14 +2,14 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const buildSparkline = (series, min, max) => {
   if (!series.length) return "";
-  const width = 320;
-  const height = 76;
+  const width = 150;
+  const height = 24;
   const range = max - min || 1;
   return series
     .map((point, index) => {
       const x = series.length === 1 ? 0 : (index / (series.length - 1)) * width;
       const normalized = clamp((point.value - min) / range, 0, 1);
-      const y = 6 + (1 - normalized) * (height - 12);
+      const y = 2 + (1 - normalized) * (height - 4);
       return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
@@ -47,35 +47,62 @@ export default function SensorChart({
   min,
   max,
   wide = false,
+  square = false,
+  roundedGauge = false,
   controls,
 }) {
   const colors = toneClasses[tone] || toneClasses.unknown;
   const gaugePercentage = percentage === null ? 0 : clamp(percentage, 0, 100);
   const sparklinePath = buildSparkline(series, min, max);
+  const usesRoundedGauge = square || roundedGauge;
+  const gaugePath = usesRoundedGauge
+    ? "M 47.1 112 A 56 56 0 1 1 132.9 112"
+    : "M 27 94 A 63 63 0 0 1 153 94";
 
   return (
-    <article className="flex min-h-[158px] flex-col rounded-xl border border-white/[0.12] bg-[#191e28] p-3 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[11px] font-semibold text-slate-100">{title}</h2>
-        {controls}
+    <article
+      className={`relative h-[237px] min-h-[237px] overflow-hidden rounded-xl border border-white/[0.12] bg-[#1b202b] p-3 shadow-[0_10px_24px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.025)] ${
+        square
+          ? "w-[237px] justify-self-center sm:justify-self-start"
+          : "w-full"
+      }`}
+    >
+      <div className="relative z-10 flex items-center justify-between gap-3">
+        <h2 className="text-[11px] font-semibold tracking-[-0.01em] text-slate-100">
+          {title}
+        </h2>
+        {controls && <div className="opacity-80 transition hover:opacity-100">{controls}</div>}
       </div>
 
-      <div className={`mt-1 flex flex-1 items-center gap-3 ${wide ? "sm:gap-6" : "justify-center"}`}>
-        <div className="relative w-[130px] shrink-0">
-          <svg viewBox="0 0 180 112" className="w-full" aria-hidden="true">
+      <div
+        className={`absolute ${
+          square
+            ? "left-1/2 top-[28px] w-[252px] -translate-x-1/2"
+            : roundedGauge
+              ? "left-3 top-[28px] w-[200px]"
+            : wide
+              ? "left-3 top-[25px] w-[150px]"
+              : "left-1/2 top-[25px] w-[150px] -translate-x-1/2"
+        }`}
+      >
+          <svg
+            viewBox={usesRoundedGauge ? "0 0 180 128" : "0 0 180 116"}
+            className="w-full"
+            aria-hidden="true"
+          >
             <path
-              d="M 28 91 A 62 62 0 0 1 152 91"
+              d={gaugePath}
               fill="none"
-              stroke="#303642"
-              strokeWidth="12"
+              stroke="#303641"
+              strokeWidth={usesRoundedGauge ? "6" : "11"}
               strokeLinecap="round"
               pathLength="100"
             />
             <path
-              d="M 28 91 A 62 62 0 0 1 152 91"
+              d={gaugePath}
               fill="none"
               stroke={colors.stroke}
-              strokeWidth="12"
+              strokeWidth={usesRoundedGauge ? "6" : "11"}
               strokeLinecap="round"
               pathLength="100"
               strokeDasharray={`${gaugePercentage} 100`}
@@ -83,10 +110,10 @@ export default function SensorChart({
             />
             <text
               x="90"
-              y="77"
+              y="78"
               textAnchor="middle"
               fill="#f8fafc"
-              fontSize="30"
+              fontSize={square ? "25.6" : roundedGauge ? "22.4" : "32"}
               fontWeight="700"
             >
               {value === null ? "--" : `${value}${unit}`}
@@ -94,7 +121,7 @@ export default function SensorChart({
             {secondaryValue && (
               <text
                 x="90"
-                y="98"
+                y="101"
                 textAnchor="middle"
                 fill="#94a3b8"
                 fontSize="12"
@@ -103,48 +130,70 @@ export default function SensorChart({
               </text>
             )}
           </svg>
-          <div className="-mt-1 flex items-center justify-between text-[9px] text-slate-400">
-            <span>{label}</span>
-            <span className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${colors.badge}`}>
-              {status}
-            </span>
-          </div>
-        </div>
+      </div>
 
-        {wide && (
-          <div className="hidden min-w-0 flex-1 sm:block">
-            <div className="mb-1 flex items-center justify-between text-[8px] text-slate-500">
-              <span>HISTORY</span>
-              <span>{series.at(-1)?.label || "NO DATA"}</span>
-            </div>
-            <svg viewBox="0 0 320 76" className="h-[76px] w-full overflow-visible">
-              {[0, 1, 2].map((line) => (
-                <line
-                  key={line}
-                  x1="0"
-                  x2="320"
-                  y1={10 + line * 26}
-                  y2={10 + line * 26}
-                  stroke="rgba(148,163,184,0.10)"
-                />
-              ))}
-              {sparklinePath ? (
+      {wide && (
+        <div
+          className={`absolute ${
+            roundedGauge
+              ? "left-[22px] top-[158px] w-[170px]"
+              : "left-[18px] top-[119px] w-[145px]"
+          }`}
+        >
+          <svg viewBox="0 0 150 24" className="h-6 w-full overflow-visible" aria-label="최근 센서 추이">
+            <line
+              x1="0"
+              x2="150"
+              y1="20"
+              y2="20"
+              stroke="rgba(148,163,184,0.12)"
+            />
+            {sparklinePath && (
+              <>
                 <path
                   d={sparklinePath}
                   fill="none"
                   stroke={colors.stroke}
-                  strokeWidth="2.5"
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.12"
+                />
+                <path
+                  d={sparklinePath}
+                  fill="none"
+                  stroke={colors.stroke}
+                  strokeWidth="1.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
-              ) : (
-                <text x="160" y="42" textAnchor="middle" fill="#64748b" fontSize="10">
-                  센서 데이터 수신 대기 중
-                </text>
-              )}
-            </svg>
-          </div>
-        )}
+              </>
+            )}
+            {!sparklinePath && (
+              <line
+                x1="0"
+                x2="150"
+                y1="12"
+                y2="12"
+                stroke={colors.stroke}
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                opacity="0.35"
+              />
+            )}
+          </svg>
+        </div>
+      )}
+
+      <div
+        className={`absolute bottom-2.5 left-3 flex items-center justify-between text-[9px] text-slate-400 ${
+          roundedGauge ? "w-[200px]" : wide ? "w-[150px]" : "right-3"
+        }`}
+      >
+        <span>{label}</span>
+        <span className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${colors.badge}`}>
+          {status}
+        </span>
       </div>
     </article>
   );

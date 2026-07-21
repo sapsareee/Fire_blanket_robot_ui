@@ -22,12 +22,12 @@ export default function EventLogPanel({ logs, expanded = false }) {
   return (
     <section className="rounded-xl border border-white/[0.12] bg-[#191e28] p-3 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-[11px] font-semibold text-slate-100">Trigger Log</h2>
-        <span className="text-[8px] text-slate-500">{logs.length} EVENTS</span>
+        <h2 className="text-[16.5px] font-semibold text-slate-100">Trigger Log</h2>
+        <span className="text-[12px] text-slate-500">{logs.length} EVENTS</span>
       </div>
 
       {visibleLogs.length === 0 ? (
-        <div className="flex min-h-[64px] items-center justify-center rounded-lg border border-dashed border-white/10 text-[10px] text-slate-500">
+        <div className="flex min-h-[64px] items-center justify-center rounded-lg border border-dashed border-white/10 text-[15px] text-slate-500">
           센서 상태 변경 및 경고 이벤트 대기 중
         </div>
       ) : expanded ? (
@@ -40,12 +40,12 @@ export default function EventLogPanel({ logs, expanded = false }) {
                 className={`rounded-lg border bg-[#202631] p-3 ${tone.border}`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${tone.badge}`}>
+                  <span className={`rounded px-1.5 py-0.5 text-[12px] font-bold ${tone.badge}`}>
                     {log.level}
                   </span>
-                  <span className="font-mono text-[8px] text-slate-500">{log.time}</span>
+                  <span className="font-mono text-[12px] text-slate-500">{log.time}</span>
                 </div>
-                <p className="mt-2 text-[10px] leading-relaxed text-slate-200">{log.text}</p>
+                <p className="mt-2 text-[15px] leading-relaxed text-slate-200">{log.text}</p>
               </div>
             );
           })}
@@ -58,14 +58,14 @@ export default function EventLogPanel({ logs, expanded = false }) {
               const tone = LOG_TONES[log.level] || LOG_TONES.INFO;
               return (
                 <div key={log.id} className="relative w-[155px] pb-4">
-                  <div className={`h-[42px] rounded-lg border bg-[#202631] px-2 py-1.5 ${tone.border}`}>
+                  <div className={`h-[60px] rounded-lg border bg-[#202631] px-2 py-2 ${tone.border}`}>
                     <div className="flex items-center gap-1.5">
-                      <span className={`rounded px-1 py-0.5 text-[7px] font-bold ${tone.badge}`}>
+                      <span className={`rounded px-1 py-0.5 text-[10.5px] font-bold ${tone.badge}`}>
                         {log.level}
                       </span>
-                      <span className="font-mono text-[7px] text-slate-400">{log.time}</span>
+                      <span className="font-mono text-[10.5px] text-slate-400">{log.time}</span>
                     </div>
-                    <p className="mt-1 truncate text-[8px] text-slate-200" title={log.text}>
+                    <p className="mt-1.5 truncate text-[12px] text-slate-200" title={log.text}>
                       {log.text}
                     </p>
                   </div>

@@ -29,15 +29,15 @@ function ConnectionTile({ icon, name, connected, status }) {
         <img
           src={icon}
           alt=""
-          className="mb-1 block h-4 w-4 shrink-0 object-contain opacity-90"
+          className="mb-1.5 block h-8 w-8 shrink-0 object-contain opacity-90"
         />
       ) : (
-        <span className="mb-1 text-sm text-slate-200">{icon}</span>
+        <span className="mb-1.5 text-[28px] leading-none text-slate-200">{icon}</span>
       )}
-      <span className="max-w-full truncate text-[8px] font-medium leading-tight text-slate-100">
+      <span className="max-w-full text-[12px] font-medium leading-tight text-slate-100">
         {name}
       </span>
-      <span className={`mt-0.5 text-[7px] font-semibold leading-none ${tone.text}`}>
+      <span className={`mt-1 text-[10.5px] font-semibold leading-none ${tone.text}`}>
         {status}
       </span>
     </div>
@@ -74,10 +74,10 @@ export default function ConnectionPanel({
   return (
     <section className="flex min-h-[237px] flex-col rounded-xl border border-white/[0.12] bg-[#191e28] p-3 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-[11px] font-semibold text-slate-100">
+        <h2 className="text-[16.5px] font-semibold text-slate-100">
           Sensor Connection Status
         </h2>
-        <span className="text-[8px] text-slate-500">
+        <span className="text-[12px] text-slate-500">
           {tiles.filter((tile) => tile.connected).length}/{tiles.length} ONLINE
         </span>
       </div>
