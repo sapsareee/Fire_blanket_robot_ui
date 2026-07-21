@@ -67,9 +67,9 @@ export default function DashboardLayout({
           </nav>
           <div className="hidden shrink-0 items-center gap-3 px-4 text-right sm:flex">
             <span className={`h-1.5 w-1.5 rounded-full ${bridgeTone}`} />
-            <div className="font-mono text-[9px] leading-tight text-slate-300">
-              <div>{formatClock(now)}</div>
-              <div className="text-slate-500">{formatDate(now)}</div>
+            <div className="whitespace-nowrap font-mono text-[18px] leading-none text-slate-300">
+              <span>{formatClock(now)}</span>{" "}
+              <span className="text-slate-500">{formatDate(now)}</span>
             </div>
           </div>
         </header>
