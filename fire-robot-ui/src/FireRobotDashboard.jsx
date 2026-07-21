@@ -8,7 +8,6 @@ import motorIcon from "./assets/icons/icon-motor.svg";
 import temperatureIcon from "./assets/icons/icon-temperature.svg";
 import rosIcon from "./assets/icons/icon-ros.svg";
 import nav2Video from "./assets/videos/nav_canva.mp4";
-import rgbViewVideo from "./assets/videos/rgb_canva.mp4";
 
 const PAGE_IS_HTTPS = window.location.protocol === "https:";
 const WS_PROTOCOL = PAGE_IS_HTTPS ? "wss" : "ws";
@@ -32,7 +31,6 @@ const SAMPLE_INTERVAL_OPTIONS = [500, 1000, 2000];
 const TREND_WINDOW_OPTIONS = [16, 32, 64, 120];
 const DEFAULT_TREND_WINDOW = 32;
 const MAX_HISTORY_POINTS = 240;
-const INITIAL_HISTORY_POINTS = 64;
 const MAX_EVENT_LOGS = 200;
 const FIRE_RISK_TEMP_THRESHOLD_C = 80;
 const STREAM_RETRY_INTERVAL_MS = 3000;
@@ -42,8 +40,6 @@ const BATTERY_MAX_V = 11.5;
 
 const TEMP_MIN_C = 30;
 const TEMP_MAX_C = 50;
-const TEMP_BASE_C = 40;
-const TEMP_INITIAL_VARIANCE = 0.2;
 
 const GRAPH_FRAME = {
   width: 320,
@@ -62,19 +58,6 @@ const formatTimeLabel = (timeMs) => {
   const mm = String(date.getMinutes()).padStart(2, "0");
   const ss = String(date.getSeconds()).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
-};
-
-const createInitialSeries = (count, baseValue, variance, min, max, intervalMs) => {
-  const now = Date.now();
-  return Array.from({ length: count }, (_, idx) => {
-    const timestamp = now - (count - 1 - idx) * intervalMs;
-    const randomOffset = (Math.random() * 2 - 1) * variance;
-    return {
-      t: timestamp,
-      label: formatTimeLabel(timestamp),
-      value: clamp(baseValue + randomOffset, min, max),
-    };
-  });
 };
 
 const TOPIC_CONFIG = [
@@ -98,6 +81,15 @@ const createInitialTopicState = () =>
     return acc;
   }, {});
 
+const ICON_MAP = {
+  autonomy: autonomyIcon,
+  thermal_camera: thermalIcon,
+  vision_sensor: cameraIcon,
+  battery_sensor: batteryIcon,
+  motor: motorIcon,
+  temperature_sensor: temperatureIcon,
+};
+
 export default function FireRobotDashboard() {
   const [rosConnected, setRosConnected] = useState(false);
   const [activeTab, setActiveTab] = useState("home");
@@ -108,10 +100,9 @@ export default function FireRobotDashboard() {
   const [rvizReloadKey, setRvizReloadKey] = useState(0);
   const [rvizImageOk, setRvizImageOk] = useState(false);
   const [topicStates, setTopicStates] = useState(createInitialTopicState());
-  const [thermalImageSize, setThermalImageSize] = useState({ width: 0, height: 0 });
   const [temperatureTrend, setTemperatureTrend] = useState(null);
   const [maxTemperature, setMaxTemperature] = useState(null);
-  const [fireDetected, setFireDetected] = useState(false);
+  const [fireDetected, setFireDetected] = useState(null);
   const [batteryVoltage, setBatteryVoltage] = useState(null);
   const [internalTemperature, setInternalTemperature] = useState(null);
   const [eventLogs, setEventLogs] = useState([]);
@@ -125,36 +116,57 @@ export default function FireRobotDashboard() {
   const thermalTrendLastSeenRef = useRef(0);
   const thermalMaxLastSeenRef = useRef(0);
   const fireDetectedLastSeenRef = useRef(0);
+  const fireDetectedStateRef = useRef(null);
   const prevConnectionAliveRef = useRef(null);
-  const prevFireDetectedRef = useRef(null);
   const prevHighTempStateRef = useRef(null);
-  const prevRosConnectedRef = useRef(null);
+  const rosConnectedStateRef = useRef(false);
   const [sampleIntervalMs, setSampleIntervalMs] = useState(DEFAULT_SAMPLE_INTERVAL_MS);
   const [trendWindowPoints, setTrendWindowPoints] = useState(DEFAULT_TREND_WINDOW);
   const [batterySeries, setBatterySeries] = useState([]);
   const [tempSeries, setTempSeries] = useState([]);
 
-  useEffect(() => {
-    // debug: log initial temperature series and constants
-    try {
-      // eslint-disable-next-line no-console
-      console.log("[DEBUG] TEMP_BASE_C, TEMP_INITIAL_VARIANCE, TEMP_MIN_C, TEMP_MAX_C", TEMP_BASE_C, TEMP_INITIAL_VARIANCE, TEMP_MIN_C, TEMP_MAX_C);
-      // eslint-disable-next-line no-console
-      console.log("[DEBUG] tempSeries sample:", tempSeries.slice(0, 5).map(s => s.value));
-    } catch (e) {
-      // ignore
-    }
-  }, []);
+  const thermalTopicAlive = Boolean(
+    topicStates.thermal_camera &&
+      !topicStates.thermal_camera.timedOut &&
+      topicStates.thermal_camera.value === true
+  );
+  const autonomyTopicAlive = Boolean(
+    topicStates.autonomy &&
+      !topicStates.autonomy.timedOut &&
+      topicStates.autonomy.value === true
+  );
+  const rgbTopicAlive = Boolean(
+    topicStates.vision_sensor &&
+      !topicStates.vision_sensor.timedOut &&
+      topicStates.vision_sensor.value === true
+  );
+
+  const shouldLoadThermalStream = rosConnected && thermalTopicAlive;
+  const shouldLoadAutonomyVideo = rosConnected && autonomyTopicAlive;
+  const shouldLoadRgbStream = rosConnected && rgbTopicAlive;
+  const thermalStreamConnected = shouldLoadThermalStream && thermalImageOk;
+  const autonomyStreamConnected = shouldLoadAutonomyVideo && rvizImageOk;
+  const rgbStreamConnected = shouldLoadRgbStream && rgbImageOk;
 
   useEffect(() => {
-    if (thermalImageOk) return undefined;
+    if (!shouldLoadThermalStream || thermalImageOk) return undefined;
 
     const timer = setInterval(() => {
       setThermalReloadKey((v) => v + 1);
     }, STREAM_RETRY_INTERVAL_MS);
 
     return () => clearInterval(timer);
-  }, [thermalImageOk]);
+  }, [shouldLoadThermalStream, thermalImageOk]);
+
+  useEffect(() => {
+    if (!shouldLoadRgbStream || rgbImageOk) return undefined;
+
+    const timer = setInterval(() => {
+      setRgbReloadKey((v) => v + 1);
+    }, STREAM_RETRY_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, [shouldLoadRgbStream, rgbImageOk]);
 
   const appendEventLog = useCallback((level, text) => {
     const now = Date.now();
@@ -169,6 +181,72 @@ export default function FireRobotDashboard() {
     setEventLogs((prev) => [nextLog, ...prev].slice(0, MAX_EVENT_LOGS));
   }, []);
 
+  const updateFireDetection = useCallback(
+    (nextState, unavailableReason = "화재 감지 데이터 수신 중단") => {
+      const previousState = fireDetectedStateRef.current;
+      if (previousState === nextState) return;
+
+      if (nextState === true) {
+        appendEventLog(
+          "ALERT",
+          "화재 발생 가능성 감지됨 (/thermal/fire_detected=true)"
+        );
+      } else if (nextState === false && previousState === true) {
+        appendEventLog("INFO", "화재 감지 상태 해제됨");
+      } else if (nextState === null && previousState !== null) {
+        appendEventLog("WARN", unavailableReason);
+      }
+
+      fireDetectedStateRef.current = nextState;
+      setFireDetected(nextState);
+    },
+    [appendEventLog]
+  );
+
+  const updateMaxTemperature = useCallback(
+    (nextTemperature) => {
+      if (nextTemperature === null) {
+        prevHighTempStateRef.current = null;
+        setMaxTemperature(null);
+        return;
+      }
+
+      const isHighTemp = nextTemperature >= FIRE_RISK_TEMP_THRESHOLD_C;
+      const previousHighTempState = prevHighTempStateRef.current;
+
+      if (isHighTemp && previousHighTempState !== true) {
+        appendEventLog(
+          "WARN",
+          `고온 경고: 최고 온도 ${nextTemperature.toFixed(1)}°C (임계치 ${FIRE_RISK_TEMP_THRESHOLD_C}°C)`
+        );
+      } else if (!isHighTemp && previousHighTempState === true) {
+        appendEventLog(
+          "INFO",
+          `고온 상태 해제: 최고 온도 ${nextTemperature.toFixed(1)}°C`
+        );
+      }
+
+      prevHighTempStateRef.current = isHighTemp;
+      setMaxTemperature(nextTemperature);
+    },
+    [appendEventLog]
+  );
+
+  const updateRosConnection = useCallback(
+    (nextConnected) => {
+      const previousConnected = rosConnectedStateRef.current;
+      if (previousConnected === nextConnected) return;
+
+      appendEventLog(
+        nextConnected ? "INFO" : "WARN",
+        nextConnected ? "ROS Bridge 연결됨" : "ROS Bridge 연결 끊김"
+      );
+      rosConnectedStateRef.current = nextConnected;
+      setRosConnected(nextConnected);
+    },
+    [appendEventLog]
+  );
+
   // ROS2 web_video_server 사용 예시
   // 예: ros2 run web_video_server web_video_server
   // 브라우저에서 접근 가능한 주소로 바꾸세요.
@@ -180,7 +258,6 @@ export default function FireRobotDashboard() {
   useEffect(() => {
     let isUnmounted = false;
     let subscribers = [];
-    let timeoutChecker = null;
 
     const scheduleReconnect = () => {
       if (isUnmounted) {
@@ -209,6 +286,7 @@ export default function FireRobotDashboard() {
       }
 
       reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectTimeoutRef.current = null;
         connectRos();
       }, delay);
     };
@@ -218,8 +296,10 @@ export default function FireRobotDashboard() {
 
       // 기존 연결 정리
       if (rosInstanceRef.current) {
+        const previousRos = rosInstanceRef.current;
+        rosInstanceRef.current = null;
         try {
-          rosInstanceRef.current.close();
+          previousRos.close();
         } catch (e) {
           console.warn("[ROS] Failed to close existing connection:", e);
         }
@@ -242,29 +322,40 @@ export default function FireRobotDashboard() {
       rosInstanceRef.current = ros;
 
       ros.on("connection", () => {
-        if (isUnmounted) return;
+        if (isUnmounted || rosInstanceRef.current !== ros) return;
         reconnectAttemptRef.current = 0; // 성공 시 재시도 카운트 리셋
-        setRosConnected(true);
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        updateRosConnection(true);
         console.log("[ROS] rosbridge connected successfully");
       });
 
       ros.on("error", (error) => {
-        if (isUnmounted) return;
-        setRosConnected(false);
+        if (isUnmounted || rosInstanceRef.current !== ros) return;
+        updateRosConnection(false);
         console.error("[ROS] rosbridge error:", error);
         scheduleReconnect();
       });
 
       ros.on("close", () => {
-        if (isUnmounted) return;
-        setRosConnected(false);
+        if (isUnmounted || rosInstanceRef.current !== ros) return;
+        updateRosConnection(false);
         console.warn("[ROS] rosbridge connection closed");
         setTemperatureTrend(null);
-        setMaxTemperature(null);
-        setFireDetected(false);
+        updateMaxTemperature(null);
+        setBatteryVoltage(null);
+        setInternalTemperature(null);
+        updateFireDetection(null, "ROS Bridge 연결 중단으로 화재 감지 상태 확인 불가");
+        setThermalImageOk(false);
+        setRgbImageOk(false);
+        setRvizImageOk(false);
         thermalTrendLastSeenRef.current = 0;
         thermalMaxLastSeenRef.current = 0;
         fireDetectedLastSeenRef.current = 0;
+        batteryVoltageLastSeenRef.current = 0;
+        internalTempLastSeenRef.current = 0;
 
         // rosbridge 연결이 끊긴 경우 전체를 timeout/disconnect 취급
         setTopicStates((prev) => {
@@ -301,7 +392,7 @@ export default function FireRobotDashboard() {
               setTemperatureTrend(numericValue);
             } else {
               thermalMaxLastSeenRef.current = now;
-              setMaxTemperature(numericValue);
+              updateMaxTemperature(numericValue);
             }
 
             setTopicStates((prev) => ({
@@ -355,16 +446,15 @@ export default function FireRobotDashboard() {
         const now = Date.now();
         batteryVoltageLastSeenRef.current = now;
         const roundedVoltage = Number(voltage.toFixed(2));
-        const clampedVoltage = clamp(roundedVoltage, BATTERY_MIN_V, BATTERY_MAX_V);
 
-        console.log("[ROS] Battery voltage received:", clampedVoltage);
+        console.log("[ROS] Battery voltage received:", roundedVoltage);
 
-        setBatteryVoltage(clampedVoltage);
+        setBatteryVoltage(roundedVoltage);
         setBatterySeries((prev) => {
           const next = {
             t: now,
             label: formatTimeLabel(now),
-            value: clampedVoltage,
+            value: roundedVoltage,
           };
           // Keep only the latest MAX_HISTORY_POINTS
           const updated = prev.length >= MAX_HISTORY_POINTS 
@@ -392,7 +482,7 @@ export default function FireRobotDashboard() {
 
         console.log("[ROS] Fire detected state received:", fireState);
 
-        setFireDetected(fireState);
+        updateFireDetection(fireState);
       });
 
       subscribers.push(fireDetectedTopic);
@@ -412,8 +502,7 @@ export default function FireRobotDashboard() {
 
         const now = Date.now();
         internalTempLastSeenRef.current = now;
-        const clampedTemp = clamp(tempValue, TEMP_MIN_C, TEMP_MAX_C);
-        const roundedTemp = Number(clampedTemp.toFixed(1));
+        const roundedTemp = Number(tempValue.toFixed(1));
 
         console.log("[ROS] Internal Temperature received:", roundedTemp);
 
@@ -443,140 +532,16 @@ export default function FireRobotDashboard() {
       });
 
       subscribers.push(internalTempTopic);
-
-      timeoutChecker = setInterval(() => {
-        const now = Date.now();
-
-        // Check battery voltage timeout
-        if (batteryVoltageLastSeenRef.current > 0 && now - batteryVoltageLastSeenRef.current > TIMEOUT_MS) {
-          console.log("[ROS] Battery voltage timeout detected");
-          setBatteryVoltage(null);
-          batteryVoltageLastSeenRef.current = 0;
-        }
-
-        if (thermalTrendLastSeenRef.current > 0 && now - thermalTrendLastSeenRef.current > TIMEOUT_MS) {
-          console.log("[ROS] Thermal temperature trend timeout detected");
-          setTemperatureTrend(null);
-          thermalTrendLastSeenRef.current = 0;
-          setTopicStates((prev) => ({
-            ...prev,
-            thermal_avg_temp: {
-              ...prev.thermal_avg_temp,
-              timedOut: true,
-            },
-          }));
-        }
-
-        if (thermalMaxLastSeenRef.current > 0 && now - thermalMaxLastSeenRef.current > TIMEOUT_MS) {
-          console.log("[ROS] Thermal max temperature timeout detected");
-          setMaxTemperature(null);
-          thermalMaxLastSeenRef.current = 0;
-          setTopicStates((prev) => ({
-            ...prev,
-            thermal_max_temp: {
-              ...prev.thermal_max_temp,
-              timedOut: true,
-            },
-          }));
-        }
-
-        if (fireDetectedLastSeenRef.current > 0 && now - fireDetectedLastSeenRef.current > TIMEOUT_MS) {
-          console.log("[ROS] Fire detected timeout detected");
-          setFireDetected(false);
-          fireDetectedLastSeenRef.current = 0;
-        }
-
-        // Check internal temperature timeout
-        if (internalTempLastSeenRef.current > 0 && now - internalTempLastSeenRef.current > TIMEOUT_MS) {
-          console.log("[ROS] Internal temperature timeout detected");
-          setInternalTemperature(null);
-          internalTempLastSeenRef.current = 0;
-        }
-
-        setTopicStates((prev) => {
-          let changed = false;
-          const next = { ...prev };
-
-          for (const cfg of TOPIC_CONFIG) {
-            const current = prev[cfg.key];
-            const isTimedOut =
-              !current.lastSeen || now - current.lastSeen > TIMEOUT_MS;
-
-            if (current.timedOut !== isTimedOut) {
-              next[cfg.key] = {
-                ...current,
-                timedOut: isTimedOut,
-              };
-              changed = true;
-            }
-          }
-
-          return changed ? next : prev;
-        });
-      }, CHECK_INTERVAL_MS);
     };
 
     // 초기 연결
     connectRos();
-
-    // Keep updating series even when no topic data to make graph flow
-    const graphFlowTimer = setInterval(() => {
-      const now = Date.now();
-
-      // Update battery series if no recent data received from topic
-      setBatterySeries((prev) => {
-        if (prev.length === 0) return prev;
-        // If battery topic data hasn't arrived recently, copy last value
-        if (now - batteryVoltageLastSeenRef.current > sampleIntervalMs * 0.8) {
-          const lastPoint = prev[prev.length - 1];
-          const next = {
-            t: now,
-            label: formatTimeLabel(now),
-            value: lastPoint.value,
-          };
-          console.log("[GRAPH] Auto-flowing battery data:", next.value);
-          const updated = prev.length >= MAX_HISTORY_POINTS 
-            ? [...prev.slice(1), next]
-            : [...prev, next];
-          return updated;
-        }
-        return prev;
-      });
-
-      // Update temp series if no recent data received from topic
-      setTempSeries((prev) => {
-        if (prev.length === 0) return prev;
-        // If temperature topic data hasn't arrived recently, copy last value
-        if (now - internalTempLastSeenRef.current > sampleIntervalMs * 0.8) {
-          const lastPoint = prev[prev.length - 1];
-          const next = {
-            t: now,
-            label: formatTimeLabel(now),
-            value: lastPoint.value,
-          };
-          console.log("[GRAPH] Auto-flowing temp data:", next.value);
-          const updated = prev.length >= MAX_HISTORY_POINTS 
-            ? [...prev.slice(1), next]
-            : [...prev, next];
-          return updated;
-        }
-        return prev;
-      });
-    }, sampleIntervalMs);
 
     return () => {
       isUnmounted = true;
 
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
-      }
-
-      if (timeoutChecker) {
-        clearInterval(timeoutChecker);
-      }
-
-      if (graphFlowTimer) {
-        clearInterval(graphFlowTimer);
       }
 
       subscribers.forEach((topic) => {
@@ -595,7 +560,133 @@ export default function FireRobotDashboard() {
         }
       }
     };
-  }, []);
+  }, [updateFireDetection, updateMaxTemperature, updateRosConnection]);
+
+  useEffect(() => {
+    const timeoutChecker = setInterval(() => {
+      const now = Date.now();
+
+      if (
+        batteryVoltageLastSeenRef.current > 0 &&
+        now - batteryVoltageLastSeenRef.current > TIMEOUT_MS
+      ) {
+        console.log("[ROS] Battery voltage timeout detected");
+        setBatteryVoltage(null);
+        batteryVoltageLastSeenRef.current = 0;
+      }
+
+      if (
+        thermalTrendLastSeenRef.current > 0 &&
+        now - thermalTrendLastSeenRef.current > TIMEOUT_MS
+      ) {
+        console.log("[ROS] Thermal temperature trend timeout detected");
+        setTemperatureTrend(null);
+        thermalTrendLastSeenRef.current = 0;
+      }
+
+      if (
+        thermalMaxLastSeenRef.current > 0 &&
+        now - thermalMaxLastSeenRef.current > TIMEOUT_MS
+      ) {
+        console.log("[ROS] Thermal max temperature timeout detected");
+        updateMaxTemperature(null);
+        thermalMaxLastSeenRef.current = 0;
+      }
+
+      if (
+        fireDetectedLastSeenRef.current > 0 &&
+        now - fireDetectedLastSeenRef.current > TIMEOUT_MS
+      ) {
+        console.log("[ROS] Fire detected timeout detected");
+        fireDetectedLastSeenRef.current = 0;
+        updateFireDetection(null, "화재 감지 데이터 timeout: 현재 상태 확인 불가");
+      }
+
+      if (
+        internalTempLastSeenRef.current > 0 &&
+        now - internalTempLastSeenRef.current > TIMEOUT_MS
+      ) {
+        console.log("[ROS] Internal temperature timeout detected");
+        setInternalTemperature(null);
+        internalTempLastSeenRef.current = 0;
+      }
+
+      setTopicStates((prev) => {
+        let changed = false;
+        const next = { ...prev };
+
+        for (const cfg of TOPIC_CONFIG) {
+          const current = prev[cfg.key];
+          const isTimedOut =
+            !current.lastSeen || now - current.lastSeen > TIMEOUT_MS;
+
+          if (current.timedOut !== isTimedOut) {
+            next[cfg.key] = {
+              ...current,
+              timedOut: isTimedOut,
+            };
+            changed = true;
+          }
+        }
+
+        return changed ? next : prev;
+      });
+    }, CHECK_INTERVAL_MS);
+
+    return () => clearInterval(timeoutChecker);
+  }, [updateFireDetection, updateMaxTemperature]);
+
+  useEffect(() => {
+    const graphFlowTimer = setInterval(() => {
+      const now = Date.now();
+
+      setBatterySeries((prev) => {
+        const elapsed = now - batteryVoltageLastSeenRef.current;
+        if (
+          prev.length === 0 ||
+          batteryVoltageLastSeenRef.current === 0 ||
+          elapsed <= sampleIntervalMs * 0.8 ||
+          elapsed > TIMEOUT_MS
+        ) {
+          return prev;
+        }
+
+        const lastPoint = prev[prev.length - 1];
+        const next = {
+          t: now,
+          label: formatTimeLabel(now),
+          value: lastPoint.value,
+        };
+        return prev.length >= MAX_HISTORY_POINTS
+          ? [...prev.slice(1), next]
+          : [...prev, next];
+      });
+
+      setTempSeries((prev) => {
+        const elapsed = now - internalTempLastSeenRef.current;
+        if (
+          prev.length === 0 ||
+          internalTempLastSeenRef.current === 0 ||
+          elapsed <= sampleIntervalMs * 0.8 ||
+          elapsed > TIMEOUT_MS
+        ) {
+          return prev;
+        }
+
+        const lastPoint = prev[prev.length - 1];
+        const next = {
+          t: now,
+          label: formatTimeLabel(now),
+          value: lastPoint.value,
+        };
+        return prev.length >= MAX_HISTORY_POINTS
+          ? [...prev.slice(1), next]
+          : [...prev, next];
+      });
+    }, sampleIntervalMs);
+
+    return () => clearInterval(graphFlowTimer);
+  }, [sampleIntervalMs]);
 
   // Temperature data is now received from /robot/internal_temperature topic
 
@@ -631,78 +722,6 @@ export default function FireRobotDashboard() {
     prevConnectionAliveRef.current = currentAliveMap;
   }, [topicStates, appendEventLog]);
 
-  useEffect(() => {
-    if (prevFireDetectedRef.current === null) {
-      prevFireDetectedRef.current = fireDetected;
-      return;
-    }
-
-    if (prevFireDetectedRef.current !== fireDetected) {
-      if (fireDetected) {
-        appendEventLog("ALERT", "화재 발생 가능성 감지됨 (/thermal/fire_detected=true)");
-      } else {
-        appendEventLog("INFO", "화재 감지 상태 해제됨");
-      }
-    }
-
-    prevFireDetectedRef.current = fireDetected;
-  }, [fireDetected, appendEventLog]);
-
-  useEffect(() => {
-    if (maxTemperature === null) {
-      return;
-    }
-
-    const isHighTemp = maxTemperature >= FIRE_RISK_TEMP_THRESHOLD_C;
-
-    if (prevHighTempStateRef.current === null) {
-      prevHighTempStateRef.current = isHighTemp;
-      return;
-    }
-
-    if (prevHighTempStateRef.current !== isHighTemp) {
-      if (isHighTemp) {
-        appendEventLog(
-          "WARN",
-          `고온 경고: 최고 온도 ${maxTemperature.toFixed(1)}°C (임계치 ${FIRE_RISK_TEMP_THRESHOLD_C}°C)`
-        );
-      } else {
-        appendEventLog(
-          "INFO",
-          `고온 상태 해제: 최고 온도 ${maxTemperature.toFixed(1)}°C`
-        );
-      }
-    }
-
-    prevHighTempStateRef.current = isHighTemp;
-  }, [maxTemperature, appendEventLog]);
-
-  useEffect(() => {
-    if (prevRosConnectedRef.current === null) {
-      prevRosConnectedRef.current = rosConnected;
-      return;
-    }
-
-    if (prevRosConnectedRef.current !== rosConnected) {
-      if (rosConnected) {
-        appendEventLog("INFO", "ROS Bridge 연결됨");
-      } else {
-        appendEventLog("WARN", "ROS Bridge 연결 끊김");
-      }
-    }
-
-    prevRosConnectedRef.current = rosConnected;
-  }, [rosConnected, appendEventLog]);
-
-  const iconMap = {
-    autonomy: autonomyIcon,
-    thermal_camera: thermalIcon,
-    vision_sensor: cameraIcon,
-    battery_sensor: batteryIcon,
-    motor: motorIcon,
-    temperature_sensor: temperatureIcon,
-  };
-
   const connectionItems = useMemo(() => {
     return TOPIC_CONFIG.filter((cfg) => !["thermal_avg_temp", "thermal_max_temp"].includes(cfg.key)).map((cfg) => {
       const state = topicStates[cfg.key];
@@ -711,34 +730,10 @@ export default function FireRobotDashboard() {
       return {
         name: cfg.name,
         status: isAlive ? "connect" : "disconnect",
-        icon: iconMap[cfg.key] || cameraIcon,
+        icon: ICON_MAP[cfg.key] || cameraIcon,
       };
     });
   }, [topicStates]);
-
-  const thermalTopicAlive = useMemo(() => {
-    const state = topicStates.thermal_camera;
-    return state && !state.timedOut && state.value === true;
-  }, [topicStates]);
-
-  const autonomyTopicAlive = useMemo(() => {
-    const state = topicStates.autonomy;
-    return Boolean(state && !state.timedOut && state.value === true);
-  }, [topicStates]);
-
-  const rgbTopicAlive = useMemo(() => {
-    const state = topicStates.vision_sensor;
-    return Boolean(state && !state.timedOut && state.value === true);
-  }, [topicStates]);
-
-  // web_video_server 접근 가능 + ROS 연결 상태일 때를 video server 연결로 판단
-  const videoServerConnected = useMemo(
-    () => rosConnected && thermalImageOk,
-    [rosConnected, thermalImageOk]
-  );
-
-  const shouldPlayAutonomyVideo = videoServerConnected && autonomyTopicAlive;
-  const shouldPlayRgbVideo = videoServerConnected && rgbTopicAlive;
 
   const batteryViewSeries = useMemo(
     () => batterySeries.slice(-trendWindowPoints),
@@ -760,7 +755,7 @@ export default function FireRobotDashboard() {
   const graphY = (value, min, max, frame = GRAPH_FRAME) => {
     const { height, padTop, padBottom } = frame;
     const range = max - min || 1;
-    const normalized = (value - min) / range;
+    const normalized = clamp((value - min) / range, 0, 1);
     const drawableHeight = height - padTop - padBottom;
     return padTop + (1 - normalized) * drawableHeight;
   };
@@ -875,20 +870,26 @@ export default function FireRobotDashboard() {
 
                   <div className="flex items-center gap-2">
                     <span className={`rounded-full border px-3 py-1 text-[11px] font-medium ${
-                      topicStates.thermal_camera && !topicStates.thermal_camera.timedOut && topicStates.thermal_camera.value
+                      thermalStreamConnected
                         ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
                         : "border-rose-400/30 bg-rose-500/10 text-rose-300"
                     }`}>
-                      {topicStates.thermal_camera && !topicStates.thermal_camera.timedOut && topicStates.thermal_camera.value ? "15 FPS" : "0 FPS"}
+                      {thermalStreamConnected ? "15 FPS" : "0 FPS"}
                     </span>
                     <span
                       className={`rounded-full px-3 py-1 text-xs ${
-                        topicStates.thermal_camera && !topicStates.thermal_camera.timedOut && topicStates.thermal_camera.value
+                        thermalStreamConnected
                           ? "border border-emerald-400/30 bg-emerald-500/15 text-emerald-300"
-                          : "border border-rose-400/30 bg-rose-500/15 text-rose-300"
+                          : shouldLoadThermalStream
+                            ? "border border-amber-400/30 bg-amber-500/15 text-amber-300"
+                            : "border border-rose-400/30 bg-rose-500/15 text-rose-300"
                       }`}
                     >
-                      {topicStates.thermal_camera && !topicStates.thermal_camera.timedOut && topicStates.thermal_camera.value ? "LIVE" : "DISCONNECTED"}
+                      {thermalStreamConnected
+                        ? "LIVE"
+                        : shouldLoadThermalStream
+                          ? "CONNECTING"
+                          : "DISCONNECTED"}
                     </span>
 
                     <button
@@ -904,22 +905,14 @@ export default function FireRobotDashboard() {
                 </div>
 
                 <div className={`relative mt-1 aspect-square w-full overflow-hidden bg-black/40 ${glassInsetClass}`}>
-                  {thermalTopicAlive && rosConnected ? (
+                  {shouldLoadThermalStream ? (
                     <img
                       key={thermalReloadKey}
                       src={`${thermalStreamUrl}&reload=${thermalReloadKey}`}
                       alt="ROS2 thermal stream"
                       className="h-full w-full object-contain"
-                      onLoad={(e) => {
-                        const img = e.target;
-                        setThermalImageSize({
-                          width: img.naturalWidth,
-                          height: img.naturalHeight,
-                        });
-                        setThermalImageOk(true);
-                      }}
+                      onLoad={() => setThermalImageOk(true)}
                       onError={() => {
-                        setThermalImageSize({ width: 0, height: 0 });
                         setThermalImageOk(false);
                       }}
                     />
@@ -948,11 +941,17 @@ export default function FireRobotDashboard() {
                   <div className={miniStatClass}>
                     <div className="text-[11px] text-slate-400">화재 감지</div>
                     <div className={`mt-1 text-lg font-semibold ${
-                      fireDetected 
-                        ? "text-rose-300" 
-                        : "text-emerald-300"
+                      fireDetected === true
+                        ? "text-rose-300"
+                        : fireDetected === false
+                          ? "text-emerald-300"
+                          : "text-amber-300"
                     }`}>
-                      {fireDetected ? "🔥 ON" : "✓ OFF"}
+                      {fireDetected === true
+                        ? "🔥 ON"
+                        : fireDetected === false
+                          ? "✓ OFF"
+                          : "? UNKNOWN"}
                     </div>
                   </div>
                 </div>
@@ -973,15 +972,22 @@ export default function FireRobotDashboard() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wide ${
-                        topicStates.autonomy && !topicStates.autonomy.timedOut && topicStates.autonomy.value
+                        autonomyStreamConnected
                           ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300"
-                          : "border-rose-400/30 bg-rose-500/15 text-rose-300"
+                          : shouldLoadAutonomyVideo
+                            ? "border-amber-400/30 bg-amber-500/15 text-amber-300"
+                            : "border-rose-400/30 bg-rose-500/15 text-rose-300"
                       }`}
                     >
-                      {topicStates.autonomy && !topicStates.autonomy.timedOut && topicStates.autonomy.value ? "RViz LIVE" : "RViz DISCONNECTED"}
+                      {autonomyStreamConnected
+                        ? "RViz LIVE"
+                        : shouldLoadAutonomyVideo
+                          ? "RViz LOADING"
+                          : "RViz DISCONNECTED"}
                     </span>
                     <button
                       onClick={() => {
+                        setRvizImageOk(false);
                         setRvizReloadKey((v) => v + 1);
                       }}
                       className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:bg-white/10"
@@ -993,7 +999,7 @@ export default function FireRobotDashboard() {
 
                 <div className="grid grid-cols-1 gap-3">
                   <div className={`relative aspect-square w-full overflow-hidden ${glassInsetClass}`}>
-                    {shouldPlayAutonomyVideo ? (
+                    {shouldLoadAutonomyVideo ? (
                       <video
                         key={rvizReloadKey}
                         src={nav2Video}
@@ -1002,17 +1008,22 @@ export default function FireRobotDashboard() {
                         loop
                         muted
                         playsInline
+                        onLoadStart={() => setRvizImageOk(false)}
+                        onCanPlay={() => setRvizImageOk(true)}
+                        onError={() => setRvizImageOk(false)}
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-slate-300">
-                        ROS Video Server 및 자율주행 토픽 연결 대기 중
+                        ROS 및 자율주행 토픽 연결 대기 중
                       </div>
                     )}
 
                     <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
-                    <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
-                      REC
-                    </div>
+                    {autonomyStreamConnected && (
+                      <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
+                        REC
+                      </div>
+                    )}
                   </div>
                 </div>
               </section>
@@ -1032,24 +1043,31 @@ export default function FireRobotDashboard() {
 
                   <div className="flex items-center gap-2">
                     <span className={`rounded-full border px-3 py-1 text-[11px] font-medium ${
-                      topicStates.vision_sensor && !topicStates.vision_sensor.timedOut && topicStates.vision_sensor.value
+                      rgbStreamConnected
                         ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-300"
                         : "border-rose-400/30 bg-rose-500/10 text-rose-300"
                     }`}>
-                      {topicStates.vision_sensor && !topicStates.vision_sensor.timedOut && topicStates.vision_sensor.value ? "정상 - 30 FPS" : "0 FPS"}
+                      {rgbStreamConnected ? "정상 - 30 FPS" : "0 FPS"}
                     </span>
                     <span
                       className={`rounded-full px-3 py-1 text-xs ${
-                        topicStates.vision_sensor && !topicStates.vision_sensor.timedOut && topicStates.vision_sensor.value
+                        rgbStreamConnected
                           ? "border border-emerald-400/30 bg-emerald-500/15 text-emerald-300"
-                          : "border border-rose-400/30 bg-rose-500/15 text-rose-300"
+                          : shouldLoadRgbStream
+                            ? "border border-amber-400/30 bg-amber-500/15 text-amber-300"
+                            : "border border-rose-400/30 bg-rose-500/15 text-rose-300"
                       }`}
                     >
-                      {topicStates.vision_sensor && !topicStates.vision_sensor.timedOut && topicStates.vision_sensor.value ? "LIVE" : "DISCONNECTED"}
+                      {rgbStreamConnected
+                        ? "LIVE"
+                        : shouldLoadRgbStream
+                          ? "CONNECTING"
+                          : "DISCONNECTED"}
                     </span>
 
                     <button
                       onClick={() => {
+                        setRgbImageOk(false);
                         setRgbReloadKey((v) => v + 1);
                       }}
                       className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:bg-white/10"
@@ -1060,15 +1078,14 @@ export default function FireRobotDashboard() {
                 </div>
 
                 <div className={`relative aspect-square w-full overflow-hidden ${glassInsetClass}`}>
-                  {shouldPlayRgbVideo ? (
-                    <video
+                  {shouldLoadRgbStream ? (
+                    <img
                       key={rgbReloadKey}
-                      src={rgbViewVideo}
-                      className="h-full w-full object-cover"
-                      autoPlay
-                      loop
-                      muted
-                      playsInline
+                      src={`${rgbStreamUrl}&reload=${rgbReloadKey}`}
+                      alt="ROS2 RGB stream"
+                      className="h-full w-full object-contain"
+                      onLoad={() => setRgbImageOk(true)}
+                      onError={() => setRgbImageOk(false)}
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-slate-300">
@@ -1077,9 +1094,11 @@ export default function FireRobotDashboard() {
                   )}
 
                   <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
-                  <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
-                    REC
-                  </div>
+                  {rgbStreamConnected && (
+                    <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-3 py-1 text-[11px] text-rose-300 backdrop-blur-sm">
+                      REC
+                    </div>
+                  )}
                 </div>
               </section>
                 </div>
