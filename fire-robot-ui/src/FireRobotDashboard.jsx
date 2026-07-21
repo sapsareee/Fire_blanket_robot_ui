@@ -84,50 +84,52 @@ export default function FireRobotDashboard() {
             <StreamCard {...streams.rgb} />
           </section>
 
-          <section className="grid grid-cols-1 gap-2.5 md:grid-cols-2 lg:grid-cols-[170px_minmax(0,1fr)_330px]">
-            <SensorChart
-              title="Battery"
-              label="Battery Status"
-              value={sensors.batteryPercentage}
-              unit="%"
-              secondaryValue={
-                sensors.batteryVoltage === null
-                  ? "NO DATA"
-                  : `${sensors.batteryVoltage.toFixed(2)}V`
-              }
-              percentage={sensors.batteryPercentage}
-              status={batteryTone === "unknown" ? "UNKNOWN" : batteryTone === "alert" ? "LOW" : "NORMAL"}
-              tone={batteryTone}
-              series={sensors.batteryViewSeries}
-              min={sensors.batteryRange.min}
-              max={sensors.batteryRange.max}
-            />
-            <SensorChart
-              title="Temperature"
-              label="System Temperature"
-              value={
-                sensors.internalTemperature === null
-                  ? null
-                  : formatValue(sensors.internalTemperature)
-              }
-              unit="°C"
-              percentage={sensors.temperaturePercentage}
-              status={
-                temperatureTone === "unknown"
-                  ? "UNKNOWN"
-                  : temperatureTone === "alert"
-                    ? "HOT"
-                    : temperatureTone === "warm"
-                      ? "WARM"
-                      : "NORMAL"
-              }
-              tone={temperatureTone}
-              series={sensors.tempViewSeries}
-              min={sensors.temperatureRange.min}
-              max={sensors.temperatureRange.max}
-              wide
-              controls={trendControls}
-            />
+          <section className="grid grid-cols-1 gap-2.5 lg:grid-cols-3">
+            <div className="grid min-w-0 gap-2.5 sm:grid-cols-[170px_minmax(0,1fr)] lg:col-span-2">
+              <SensorChart
+                title="Battery"
+                label="Battery Status"
+                value={sensors.batteryPercentage}
+                unit="%"
+                secondaryValue={
+                  sensors.batteryVoltage === null
+                    ? "NO DATA"
+                    : `${sensors.batteryVoltage.toFixed(2)}V`
+                }
+                percentage={sensors.batteryPercentage}
+                status={batteryTone === "unknown" ? "UNKNOWN" : batteryTone === "alert" ? "LOW" : "NORMAL"}
+                tone={batteryTone}
+                series={sensors.batteryViewSeries}
+                min={sensors.batteryRange.min}
+                max={sensors.batteryRange.max}
+              />
+              <SensorChart
+                title="Temperature"
+                label="System Temperature"
+                value={
+                  sensors.internalTemperature === null
+                    ? null
+                    : formatValue(sensors.internalTemperature)
+                }
+                unit="°C"
+                percentage={sensors.temperaturePercentage}
+                status={
+                  temperatureTone === "unknown"
+                    ? "UNKNOWN"
+                    : temperatureTone === "alert"
+                      ? "HOT"
+                      : temperatureTone === "warm"
+                        ? "WARM"
+                        : "NORMAL"
+                }
+                tone={temperatureTone}
+                series={sensors.tempViewSeries}
+                min={sensors.temperatureRange.min}
+                max={sensors.temperatureRange.max}
+                wide
+                controls={trendControls}
+              />
+            </div>
             <ConnectionPanel
               rosConnected={bridge.connected}
               bridgeStatus={bridge.status}

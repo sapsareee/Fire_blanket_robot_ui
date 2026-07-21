@@ -72,7 +72,7 @@ export default function ConnectionPanel({
   ];
 
   return (
-    <section className="min-h-[158px] rounded-xl border border-white/[0.12] bg-[#191e28] p-3 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
+    <section className="flex min-h-[237px] flex-col rounded-xl border border-white/[0.12] bg-[#191e28] p-3 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-[11px] font-semibold text-slate-100">
           Sensor Connection Status
@@ -81,7 +81,7 @@ export default function ConnectionPanel({
           {tiles.filter((tile) => tile.connected).length}/{tiles.length} ONLINE
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+      <div className="grid flex-1 auto-rows-fr grid-cols-2 gap-2 sm:grid-cols-4">
         {tiles.map((tile) => (
           <ConnectionTile key={tile.key} {...tile} />
         ))}
