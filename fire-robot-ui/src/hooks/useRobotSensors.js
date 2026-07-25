@@ -27,13 +27,7 @@ export const TOPIC_CONFIG = [
     numeric: true,
   },
   { key: "vision_sensor", name: "RGB 카메라", topic: "/vision_sensor/status" },
-  { key: "battery_sensor", name: "배터리 상태", topic: "/battery_sensor/status" },
   { key: "motor", name: "모터 상태", topic: "/motor/status" },
-  {
-    key: "temperature_sensor",
-    name: "로봇 온도",
-    topic: "/temperature_sensor/status",
-  },
 ];
 
 const createInitialTopicState = () =>
@@ -67,6 +61,15 @@ const isAlive = (state, ros) =>
       state.source === ros &&
       !state.timedOut &&
       state.value === true
+  );
+
+const hasFreshValue = (data, ros, now) =>
+  Boolean(
+    data &&
+      data.source === ros &&
+      data.value !== null &&
+      data.lastSeen > 0 &&
+      now - data.lastSeen <= TIMEOUT_MS
   );
 
 export function useRobotSensors({ ros, rosConnected, onEvent }) {
@@ -194,10 +197,14 @@ export function useRobotSensors({ ros, rosConnected, onEvent }) {
       if (!Number.isFinite(value)) return;
 
       const now = Date.now();
+      const wasConnected = hasFreshValue(batteryDataRef.current, ros, now);
       const roundedValue = Number(value.toFixed(2));
       const nextData = { value: roundedValue, lastSeen: now, source: ros };
       batteryDataRef.current = nextData;
       setBatteryData(nextData);
+      if (!wasConnected) {
+        onEvent("INFO", "배터리 센서 데이터 수신 시작");
+      }
       setBatterySeries((previous) =>
         appendHistoryPoint(previous, {
           t: now,
@@ -243,10 +250,18 @@ export function useRobotSensors({ ros, rosConnected, onEvent }) {
       if (!Number.isFinite(value)) return;
 
       const now = Date.now();
+      const wasConnected = hasFreshValue(
+        internalTemperatureRef.current,
+        ros,
+        now
+      );
       const roundedValue = Number(value.toFixed(1));
       const nextData = { value: roundedValue, lastSeen: now, source: ros };
       internalTemperatureRef.current = nextData;
       setInternalTemperatureData(nextData);
+      if (!wasConnected) {
+        onEvent("INFO", "로봇 온도센서 데이터 수신 시작");
+      }
       setTempSeries((previous) =>
         appendHistoryPoint(previous, {
           t: now,
@@ -307,6 +322,7 @@ export function useRobotSensors({ ros, rosConnected, onEvent }) {
         batteryDataRef.current.lastSeen > 0 &&
         now - batteryDataRef.current.lastSeen > TIMEOUT_MS
       ) {
+        onEvent("WARN", "배터리 센서 데이터 timeout");
         const nextData = { value: null, lastSeen: 0, source: ros };
         batteryDataRef.current = nextData;
         setBatteryData(nextData);
@@ -352,6 +368,7 @@ export function useRobotSensors({ ros, rosConnected, onEvent }) {
         internalTemperatureRef.current.lastSeen > 0 &&
         now - internalTemperatureRef.current.lastSeen > TIMEOUT_MS
       ) {
+        onEvent("WARN", "로봇 온도센서 데이터 timeout");
         const nextData = { value: null, lastSeen: 0, source: ros };
         internalTemperatureRef.current = nextData;
         setInternalTemperatureData(nextData);

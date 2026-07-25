@@ -1,21 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as ROSLIB from "roslib";
 
-const MAX_RECONNECT_ATTEMPTS = 10;
-const MAX_RECONNECT_DELAY_MS = 30000;
+const RECONNECT_DELAY_MS = 1000;
 
 export function useRosBridge({ url, onEvent }) {
   const [bridgeState, setBridgeState] = useState({
     ros: null,
     connected: false,
     status: "connecting",
-    reconnectAttempt: 0,
   });
 
   const mountedRef = useRef(false);
   const currentRosRef = useRef(null);
   const connectedRef = useRef(false);
-  const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef(null);
   const connectRef = useRef(null);
 
@@ -41,32 +38,35 @@ export function useRosBridge({ url, onEvent }) {
     };
 
     const scheduleReconnect = () => {
-      if (!mountedRef.current || reconnectTimeoutRef.current) return;
+      if (
+        !mountedRef.current ||
+        connectedRef.current ||
+        reconnectTimeoutRef.current
+      ) {
+        return;
+      }
 
-      reconnectAttemptRef.current = Math.min(
-        reconnectAttemptRef.current + 1,
-        MAX_RECONNECT_ATTEMPTS
+      setBridgeState((current) =>
+        current.status === "reconnecting" &&
+        current.ros === null &&
+        !current.connected
+          ? current
+          : {
+              ros: null,
+              connected: false,
+              status: "reconnecting",
+            }
       );
-      const delay = Math.min(
-        1000 * 2 ** (reconnectAttemptRef.current - 1),
-        MAX_RECONNECT_DELAY_MS
-      );
-
-      setBridgeState({
-        ros: null,
-        connected: false,
-        status: "reconnecting",
-        reconnectAttempt: reconnectAttemptRef.current,
-      });
 
       reconnectTimeoutRef.current = setTimeout(() => {
         reconnectTimeoutRef.current = null;
+        if (!mountedRef.current || connectedRef.current) return;
         connectRef.current?.();
-      }, delay);
+      }, RECONNECT_DELAY_MS);
     };
 
     const connect = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || connectedRef.current) return;
 
       clearReconnectTimer();
       disposeCurrentRos();
@@ -78,13 +78,11 @@ export function useRosBridge({ url, onEvent }) {
         if (!mountedRef.current || currentRosRef.current !== nextRos) return;
 
         clearReconnectTimer();
-        reconnectAttemptRef.current = 0;
         connectedRef.current = true;
         setBridgeState({
           ros: nextRos,
           connected: true,
           status: "connected",
-          reconnectAttempt: 0,
         });
         onEvent("INFO", "ROS Bridge 연결됨");
       });
@@ -92,16 +90,12 @@ export function useRosBridge({ url, onEvent }) {
       nextRos.on("error", (error) => {
         if (!mountedRef.current || currentRosRef.current !== nextRos) return;
 
-        console.error("[ROS] rosbridge error:", error);
         const wasConnected = connectedRef.current;
         connectedRef.current = false;
-        setBridgeState({
-          ros: null,
-          connected: false,
-          status: "error",
-          reconnectAttempt: reconnectAttemptRef.current,
-        });
-        if (wasConnected) onEvent("WARN", "ROS Bridge 연결 오류");
+        if (wasConnected) {
+          console.error("[ROS] rosbridge error:", error);
+          onEvent("WARN", "ROS Bridge 연결 오류");
+        }
         scheduleReconnect();
       });
 
@@ -110,12 +104,6 @@ export function useRosBridge({ url, onEvent }) {
 
         const wasConnected = connectedRef.current;
         connectedRef.current = false;
-        setBridgeState({
-          ros: null,
-          connected: false,
-          status: "reconnecting",
-          reconnectAttempt: reconnectAttemptRef.current,
-        });
         if (wasConnected) onEvent("WARN", "ROS Bridge 연결 끊김");
         scheduleReconnect();
       });
@@ -133,7 +121,6 @@ export function useRosBridge({ url, onEvent }) {
   }, [onEvent, url]);
 
   const reconnect = useCallback(() => {
-    reconnectAttemptRef.current = 0;
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -143,7 +130,6 @@ export function useRosBridge({ url, onEvent }) {
       ros: null,
       connected: false,
       status: "connecting",
-      reconnectAttempt: 0,
     });
     connectRef.current?.();
   }, []);

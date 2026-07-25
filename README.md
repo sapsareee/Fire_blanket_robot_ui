@@ -112,19 +112,19 @@ web_video_server :8080 ── HTTP/MJPEG ─┘
 | `/autonomy/status` | `std_msgs/msg/Bool` | 자율주행 모듈 상태 및 Autonomous Path 카드 활성화 |
 | `/thermal_camera/status` | `std_msgs/msg/Bool` | 열화상 카메라 상태 및 열화상 스트림 활성화 |
 | `/vision_sensor/status` | `std_msgs/msg/Bool` | RGB 카메라 상태 및 RGB 스트림 활성화 |
-| `/battery_sensor/status` | `std_msgs/msg/Bool` | 배터리 센서 연결 상태 |
 | `/motor/status` | `std_msgs/msg/Bool` | 모터 모듈 연결 상태 |
-| `/temperature_sensor/status` | `std_msgs/msg/Bool` | 로봇 온도센서 연결 상태 |
 | `/thermal/fire_detected` | `std_msgs/msg/Bool` | 화재 감지 여부. `true`이면 ALERT 발생 |
 
 상태 토픽은 단발성으로 한 번만 발행하면 4초 후 timeout으로 처리됩니다. UI가 정상 연결 상태를 유지하려면 4초보다 짧은 주기로 계속 발행해야 하며, 1 Hz 이상을 권장합니다.
+
+배터리와 로봇 온도센서는 별도의 상태 토픽을 사용하지 않습니다. 각각 `/battery_voltage`와 `/robot/internal_temperature`가 최근 4초 이내에 수신되면 연결된 것으로 판단합니다.
 
 ### 수치 토픽
 
 | 토픽 | 타입 | 단위/용도 |
 | --- | --- | --- |
-| `/battery_voltage` | `std_msgs/msg/Float32` | 배터리 전압(V), 잔량 및 추이 계산 |
-| `/robot/internal_temperature` | `std_msgs/msg/Float32` | 로봇 내부 온도(°C), 상태 및 추이 표시 |
+| `/battery_voltage` | `std_msgs/msg/Float32` | 배터리 연결 판단, 전압(V), 잔량 및 추이 계산 |
+| `/robot/internal_temperature` | `std_msgs/msg/Float32` | 온도센서 연결 판단, 로봇 내부 온도(°C), 상태 및 추이 표시 |
 | `/thermal/temperature_trend` | `std_msgs/msg/Float32` | 열화상 온도 변화율. UI에서는 °C/s로 표시 |
 | `/thermal/max_temperature` | `std_msgs/msg/Float32` | 열화상 화면의 최고 온도(°C) |
 
@@ -146,8 +146,9 @@ web_video_server :8080 ── HTTP/MJPEG ─┘
 - 토픽 timeout 기준: 4초
 - timeout 검사 주기: 1초
 - 상태 토픽은 메시지 수신 중이고 값이 `true`일 때만 `CONNECTED`
+- 배터리와 온도센서는 해당 수치 토픽이 최근 4초 이내에 수신되면 `CONNECTED`
 - rosbridge 연결이 끊기면 기존 연결에서 받은 데이터는 유효하지 않은 것으로 처리
-- rosbridge는 1, 2, 4, 8, 16, 최대 30초 간격으로 자동 재연결
+- rosbridge가 연결되지 않은 동안에는 1초마다 자동 재연결하고, 연결되면 재연결 타이머를 중지
 - 사이드바의 재연결 버튼으로 rosbridge 수동 재연결 가능
 - 열화상과 RGB 스트림은 연결 실패 중 3초마다 다시 로드
 - 각 스트림 카드의 재연결 버튼으로 수동 재로드 가능
@@ -404,10 +405,6 @@ ros2 topic pub -r 1 /autonomy/status std_msgs/msg/Bool "{data: true}"
 ```
 
 ```bash
-ros2 topic pub -r 1 /battery_sensor/status std_msgs/msg/Bool "{data: true}"
-```
-
-```bash
 ros2 topic pub -r 2 /battery_voltage std_msgs/msg/Float32 "{data: 11.2}"
 ```
 
@@ -435,6 +432,7 @@ ros2 topic pub -r 1 /thermal/fire_detected std_msgs/msg/Bool "{data: false}"
 
 - 토픽 이름과 메시지 타입 확인
 - 상태 토픽이 `true`를 발행하는지 확인
+- 배터리와 온도센서는 수치 토픽이 4초 이내의 주기로 발행되는지 확인
 - 메시지가 4초보다 짧은 주기로 반복 발행되는지 확인
 - UI가 연결된 ROS Domain과 로봇 노드의 `ROS_DOMAIN_ID`가 일치하는지 확인
 

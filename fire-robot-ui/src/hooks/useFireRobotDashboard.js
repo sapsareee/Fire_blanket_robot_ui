@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import autonomyIcon from "../assets/icons/icon-autonomy.svg";
 import batteryIcon from "../assets/icons/icon-battery.svg";
 import cameraIcon from "../assets/icons/icon-camera.svg";
@@ -7,7 +7,7 @@ import temperatureIcon from "../assets/icons/icon-temperature.svg";
 import thermalIcon from "../assets/icons/icon-thermal.svg";
 import nav2Video from "../assets/videos/nav_canva.mp4";
 import { useRosBridge } from "./useRosBridge";
-import { TOPIC_CONFIG, useRobotSensors } from "./useRobotSensors";
+import { useRobotSensors } from "./useRobotSensors";
 
 const PAGE_IS_HTTPS = window.location.protocol === "https:";
 const WS_PROTOCOL = PAGE_IS_HTTPS ? "wss" : "ws";
@@ -20,7 +20,7 @@ const VIDEO_HOST = import.meta.env.VITE_VIDEO_HOST || DEFAULT_HOST;
 const VIDEO_PORT = import.meta.env.VITE_VIDEO_PORT || "8080";
 
 const ROSBRIDGE_URL = `${WS_PROTOCOL}://${ROS_HOST}:${ROSBRIDGE_PORT}`;
-const THERMAL_STREAM_URL = `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/thermal/image&qos_profile=sensor_data`;
+const THERMAL_STREAM_URL = `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/thermal/image&type=mjpeg&quality=70&qos_profile=sensor_data`;
 const RGB_STREAM_URL = `${HTTP_PROTOCOL}://${VIDEO_HOST}:${VIDEO_PORT}/stream?topic=/rgb/image_raw&qos_profile=sensor_data`;
 const STREAM_RETRY_INTERVAL_MS = 3000;
 const MAX_EVENT_LOGS = 200;
@@ -29,14 +29,24 @@ const BATTERY_MAX_V = 11.5;
 const TEMP_MIN_C = 30;
 const TEMP_MAX_C = 50;
 
-const ICON_MAP = {
-  autonomy: autonomyIcon,
-  thermal_camera: thermalIcon,
-  vision_sensor: cameraIcon,
-  battery_sensor: batteryIcon,
-  motor: motorIcon,
-  temperature_sensor: temperatureIcon,
-};
+const CONNECTION_CONFIG = [
+  { key: "autonomy", name: "자율주행", icon: autonomyIcon },
+  { key: "thermal_camera", name: "열화상", icon: thermalIcon },
+  { key: "vision_sensor", name: "RGB 카메라", icon: cameraIcon },
+  {
+    key: "battery_sensor",
+    name: "배터리 상태",
+    icon: batteryIcon,
+    valueKey: "batteryVoltage",
+  },
+  { key: "motor", name: "모터 상태", icon: motorIcon },
+  {
+    key: "temperature_sensor",
+    name: "로봇 온도",
+    icon: temperatureIcon,
+    valueKey: "internalTemperature",
+  },
+];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -166,23 +176,19 @@ export function useFireRobotDashboard() {
     setAutonomyReloadKey((value) => value + 1);
   }, []);
 
-  const connectionItems = useMemo(
-    () =>
-      TOPIC_CONFIG.filter((config) => !config.numeric).map((config) => {
-        const state = sensors.topicStates[config.key];
-        const connected = Boolean(
-          state && !state.timedOut && state.value === true
-        );
-        return {
-          key: config.key,
-          name: config.name,
-          icon: ICON_MAP[config.key] || cameraIcon,
-          connected,
-          status: connected ? "CONNECTED" : "DISCONNECTED",
-        };
-      }),
-    [sensors.topicStates]
-  );
+  const connectionItems = CONNECTION_CONFIG.map((config) => {
+    const state = sensors.topicStates[config.key];
+    const connected = config.valueKey
+      ? sensors[config.valueKey] !== null
+      : Boolean(state && !state.timedOut && state.value === true);
+    return {
+      key: config.key,
+      name: config.name,
+      icon: config.icon,
+      connected,
+      status: connected ? "CONNECTED" : "DISCONNECTED",
+    };
+  });
 
   const batteryPercentage =
     sensors.batteryVoltage === null
@@ -230,7 +236,7 @@ export function useFireRobotDashboard() {
         shouldLoad: shouldLoadThermalStream,
         connected: thermalStreamConnected,
         status: thermalStreamConnected
-          ? "ACTIVE 30 FPS"
+          ? "ACTIVE 10 FPS"
           : shouldLoadThermalStream
             ? "CONNECTING"
             : "DISCONNECTED",

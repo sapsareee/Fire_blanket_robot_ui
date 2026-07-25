@@ -34,9 +34,7 @@ class StatusTopicController(Node):
             '1': ('/autonomy/status', 'Autonomy'),
             '2': ('/thermal_camera/status', 'Thermal Camera'),
             '3': ('/vision_sensor/status', 'Vision Sensor'),
-            '4': ('/battery_sensor/status', 'Battery Sensor'),
             '5': ('/motor/status', '모터 상태'),
-            '6': ('/temperature_sensor/status', 'Temperature Sensor'),
         }
 
         self.input_aliases = {
@@ -76,12 +74,10 @@ class StatusTopicController(Node):
         print("1: /autonomy/status true 발행/중지")
         print("2: /thermal_camera/status true 발행/중지")
         print("3: /vision_sensor/status true 발행/중지")
-        print("4: /battery_sensor/status true 발행/중지")
         print("5: /motor/status true 발행/중지")
-        print("6: /temperature_sensor/status true 발행/중지")
         print(f"온도값 토픽: {TEMP_VALUE_TOPIC} Float32, 기준 {TEMP_BASE_C:.1f}°C 주변으로 발행")
         print(f"배터리 전압 토픽: {BATTERY_VOLTAGE_TOPIC} Float32, 기준 {BATTERY_BASE_V:.1f}V +0.0~+0.02V 발행")
-        print("a: 1~6 토픽을 랜덤 선택 + 0.1~0.5초 간격으로 발행 시작 + 내부 온도값 발행/전체 중지")
+        print("a: 상태 토픽을 랜덤 선택 + 0.1~0.5초 간격으로 발행 시작 + 내부 온도값 발행/전체 중지")
         print("s: a 기능 + /battery_voltage Float32 발행 + rosbridge/web_video_server 실행/전체 중지")
         print("q: 종료")
         print("===================================")
@@ -108,9 +104,6 @@ class StatusTopicController(Node):
 
         print(f"[START] {topic} -> true, 1Hz 발행 시작")
 
-        if key == '6':
-            self.start_temperature_value_publish()
-
     def stop_publish(self, key):
         if key not in self.active_timers:
             return
@@ -121,9 +114,6 @@ class StatusTopicController(Node):
         del self.active_timers[key]
 
         print(f"[STOP] {topic}")
-
-        if key == '6':
-            self.stop_temperature_value_publish()
 
     def toggle_publish(self, key):
         if key in self.active_timers:
@@ -427,7 +417,7 @@ class StatusTopicController(Node):
             print("[INFO] 모든 토픽이 이미 발행 중입니다.")
             return
 
-        print("\n[RANDOM START] 1~6 토픽을 랜덤으로 선택하여 발행 시작")
+        print("\n[RANDOM START] 상태 토픽을 랜덤으로 선택하여 발행 시작")
         self.start_temperature_value_publish()
 
         def random_start_worker():
@@ -491,7 +481,7 @@ def input_thread(node):
         if user_input in node.topic_map:
             node.toggle_publish(user_input)
         else:
-            print("잘못된 입력입니다. 1~6, motor, a, s 또는 q를 입력하세요.")
+            print("잘못된 입력입니다. 1, 2, 3, 5, motor, a, s 또는 q를 입력하세요.")
 
 
 def main(args=None):
